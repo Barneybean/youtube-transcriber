@@ -594,6 +594,12 @@ chrome.runtime.onMessage.addListener((msg) => {
 // destinationsCache stale — Notion stays "locked" until popup reload.
 // Refetch on focus covers the upgrade-and-return flow without polling.
 // Throttled because some platforms fire `focus` on every minor activation.
+//
+// YTT-293: refetch in both branches (Settings open *and* Recent list). The
+// transcribe-and-summarize flow opens a new tab and returns, firing
+// visibilitychange twice. If we only refetch when Settings is open, the
+// kebab menu on the Recent list reads a null cache and renders the empty
+// "Connect a destination" state despite working connections.
 let lastDestinationsRefocus = 0;
 function onExtensionFocus() {
   if (document.visibilityState === "hidden") return;
@@ -603,6 +609,8 @@ function onExtensionFocus() {
   destinationsCache = null;
   if (el.settingsPanel && !el.settingsPanel.hidden) {
     renderDestinationsSettings();
+  } else {
+    fetchDestinations();
   }
 }
 window.addEventListener("focus", onExtensionFocus);
@@ -1028,9 +1036,15 @@ async function toggleRowActionsMenu(wrapper, transcriptId, videoTitle) {
   }
   closeRowActionsMenu();
 
-  // Kick off a refresh so the menu reflects connection changes while the
-  // side panel has been open.
-  fetchDestinations();
+  // YTT-293: if cache is empty (e.g. nulled by onExtensionFocus before the
+  // user navigated to Settings), wait for fetch so the menu paints with
+  // real destinations on first open. When cache is hot we fire-and-forget
+  // a refresh so the next open reflects any mid-session connection changes.
+  if (!destinationsCache) {
+    await fetchDestinations();
+  } else {
+    fetchDestinations();
+  }
 
   const menu = document.createElement("div");
   menu.className = "row-actions-menu";

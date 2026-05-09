@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-05-08
+
+### Fixed
+- **Kebab menu shows "Connect a destination" after transcribe-and-summarize (1.6.24, YTT-293)** — `onExtensionFocus` invalidated `destinationsCache` on every focus / visibility-visible event but only re-fetched when the Settings panel was open. The transcribe-and-summarize flow opens a new tab (ChatGPT/Claude handoff) and returns, firing visibilitychange twice on the side panel, so the cache landed null with the user on the Recent list. The kebab (⋯) menu's `fetchDestinations()` call wasn't awaited, so `connectedDestinations()` read the null cache synchronously and rendered the empty "Connect a destination in Settings to send" state despite working connections. Two fixes: (1) `onExtensionFocus` now refetches in both branches — Settings open *and* Recent list. (2) `toggleRowActionsMenu` awaits `fetchDestinations()` when the cache is empty so first-open paints with real destinations; hot-cache opens still fire-and-forget the refresh for next-open freshness.
+
 ## 2026-05-05
 
 ### Fixed
