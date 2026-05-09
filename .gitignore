@@ -54,6 +54,19 @@ app/dither/
 # Private local docs (cloud prompts, notes — not for public repo)
 .private/
 
+# Store listing / submission copy — competitive surface, keep local
+extension/store-listing*.md
+extension/STORE-SUBMISSION.md
+
+# Email templates + send scripts — business IP, lives in cloud repo (private fork)
+# Old commit 9c1c385 leaked these to public OSS history; do not re-add here
+emails/
+scripts/render-emails.ts
+scripts/send-email-test.ts
+
+# Internal build prompts / roadmap docs — never publish to OSS
+docs/ytt-*-build-prompt.md
+
 # Private strategy / marketing / branding docs — never commit, even if copied in
 # (these normally live in the parent transcriber/ folder which is not a git repo)
 /0*-*.md
