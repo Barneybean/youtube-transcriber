@@ -4,7 +4,7 @@ Paste these into the corresponding fields in the Chrome Web Store developer cons
 
 ## Single purpose statement
 
-> Transcribe videos and podcasts the user is viewing, then optionally hand the transcript off to a destination (Notion, Obsidian, Claude, ChatGPT) of the user's choice.
+> Transcribe the YouTube video or podcast the user is viewing, then optionally summarize it with Claude or ChatGPT or send the transcript to Notion or Obsidian, all from a side panel that stays open beside the video.
 
 ## Required permissions
 
@@ -24,12 +24,15 @@ Paste these into the corresponding fields in the Chrome Web Store developer cons
 > The extension's primary UI is a Chrome side panel that stays open beside the video being transcribed.
 
 ### `scripting`
-> Registers content scripts dynamically based on which optional host permissions the user has granted, so newly enabled platforms (Vimeo, Twitch, etc.) get their detection script without a manifest update.
+> Registers content scripts dynamically based on which optional host permissions the user has granted, so newly enabled platforms (Vimeo, Twitch, etc.) get their detection script without a manifest update. Also used to inject the panel-scrape helper on demand when extracting captions from the YouTube transcript panel.
+
+### `nativeMessaging`
+> Used in local/self-host mode only. Lets the extension start and communicate with the open-source transcription service the user has installed on their own machine (see https://github.com/lifesized/transcriber). No data leaves the user's machine via this channel; the native host is invoked solely to manage the local service. Cloud mode does not exercise this permission.
 
 ## Required host permissions
 
 ### `http://localhost:19720/*` and `http://127.0.0.1:19720/*`
-> The extension is the front-end for an open-source, locally hosted transcription service the user runs on their own machine (see https://github.com/lifesized/youtube-transcriber). When local mode is selected, the extension communicates only with this localhost service. No data leaves the user's machine.
+> The extension is the front-end for an open-source, locally hosted transcription service the user runs on their own machine (see https://github.com/lifesized/transcriber). When local mode is selected, the extension communicates only with this localhost service. No data leaves the user's machine.
 
 ### `https://transcribed.dev/*` and `https://www.transcribed.dev/*`
 > The extension is also the front-end for the cloud transcription service at transcribed.dev. When cloud mode is selected, the extension authenticates via the user's signed-in browser session and submits transcription jobs to this host. Destination OAuth (Notion, etc.) also runs through transcribed.dev as a server-side proxy, so the extension does not need per-vendor host permissions.
@@ -72,17 +75,19 @@ Live at: https://transcribed.dev/privacy/extension
 
 ## Data usage disclosures (Chrome Web Store form)
 
+These match the categories the extension transmits to transcribed.dev in cloud mode. Local/self-host mode collects none of the categories below — everything stays on the user's machine.
+
 | Category | Collected? | Notes |
 |---|---|---|
-| Personally identifiable information | No | Cloud mode uses an existing transcribed.dev account; the extension itself does not register or collect identity. |
+| Personally identifiable information | **Yes** | Email address, collected when the user creates or signs in to a transcribed.dev account in cloud mode (via Supabase Auth). Not collected in local mode. |
 | Health information | No | |
-| Financial / payment information | No | All payments handled by Stripe via transcribed.dev, never via the extension. |
-| Authentication information | No | Cloud mode rides on the user's existing transcribed.dev session cookie; no credentials are stored in the extension. |
+| Financial / payment information | No | Stripe runs in the transcribed.dev web app, not the extension. The extension never sees card numbers, billing addresses, or other payment data. |
+| Authentication information | **Yes** | Cloud mode: a Supabase session cookie issued by transcribed.dev keeps the user signed in, plus any `ytt_sk_…` API keys the user generates in the dashboard for programmatic use. Not collected in local mode. |
 | Personal communications | No | |
-| Location | No | |
-| Web history | No | The extension only knows the URL of the tab the user actively clicked on. |
-| User activity | No | No analytics or telemetry inside the extension. |
-| Website content | Yes (limited) | Video / podcast URLs the user explicitly chooses to transcribe. Sent to localhost (local mode) or transcribed.dev (cloud mode). Not sold or shared. |
+| Location | **Yes** | IP address is logged on the cloud server (transcribed.dev) for per-IP rate limiting (15 transcripts per IP per day) and abuse prevention. Not used for advertising, profiling, or precise geolocation. Not collected in local mode. |
+| Web history | **Yes** | The URL of the specific YouTube or podcast page the user chooses to transcribe is sent to the server (cloud mode) or local service (local mode) so the source audio can be fetched. Sent only when the user triggers a transcription — never general browsing history. |
+| User activity | No | No analytics, telemetry, click tracking, scroll tracking, keystroke logging, or session recording inside the extension. |
+| Website content | **Yes** | The transcript text produced from the audio of the video or podcast the user chose. In cloud mode, stored in the user's transcribed.dev account so it's accessible from any device. In local mode, stored on the user's machine only. |
 
 **Certifications (must check):**
 - ☑ I do not sell or transfer user data to third parties outside of the approved use cases.
