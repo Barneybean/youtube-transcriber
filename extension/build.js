@@ -33,6 +33,7 @@ const COPY_FILES = [
   "setup-link.css",
   "content.js",
   "content-spotify.js",
+  "content-substack.js",
   "content-llm-handoff.js",
   "icons/icon16.png",
   "icons/icon48.png",

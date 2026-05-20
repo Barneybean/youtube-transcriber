@@ -57,6 +57,12 @@ const CONTENT_SCRIPTS = [
     runAt: "document_idle",
   },
   {
+    id: "substack-content",
+    matches: ["*://*.substack.com/*"],
+    js: ["content-substack.js"],
+    runAt: "document_idle",
+  },
+  {
     id: "claude-handoff",
     matches: ["https://claude.ai/*"],
     js: ["content-llm-handoff.js"],
