@@ -29,10 +29,11 @@ const HOST_NAME = "com.transcribed.host";
 const HOST_SCRIPT = path.resolve(__dirname, "..", "tools", "native-host", "transcriber-host.js");
 
 function parseArgs(argv) {
-  const args = { ids: [], remove: false };
+  const args = { ids: [], remove: false, replace: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--remove") args.remove = true;
+    else if (a === "--replace") args.replace = true;
     else if (a === "--ext-id") args.ids.push(argv[++i]);
     else if (a.startsWith("--ext-id=")) args.ids.push(a.slice("--ext-id=".length));
   }
@@ -80,7 +81,7 @@ function tildify(p) {
   return p.startsWith(home) ? "~" + p.slice(home.length) : p;
 }
 
-function writeManifest({ ids, remove }) {
+function writeManifest({ ids, remove, replace }) {
   const dir = manifestDir();
   const manifestPath = path.join(dir, `${HOST_NAME}.json`);
 
@@ -122,12 +123,28 @@ function writeManifest({ ids, remove }) {
   fs.mkdirSync(dir, { recursive: true });
   const hostPath = makeWrapperIfNeeded();
 
+  // Merge with any existing whitelist by default so installing a new ID
+  // (e.g. dev unpacked) doesn't silently wipe the previously-installed one
+  // (e.g. the Store ext). Pass --replace to opt out.
+  let mergedIds = ids;
+  if (!replace && fs.existsSync(manifestPath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      const prevIds = (existing.allowed_origins || [])
+        .map((o) => o.match(/^chrome-extension:\/\/([^/]+)\/?$/)?.[1])
+        .filter(Boolean);
+      mergedIds = [...new Set([...prevIds, ...ids])];
+    } catch {
+      // Existing manifest unreadable — fall through to fresh write.
+    }
+  }
+
   const manifest = {
     name: HOST_NAME,
     description: "Transcriber for YouTube — local server controller",
     path: hostPath,
     type: "stdio",
-    allowed_origins: ids.map((id) => `chrome-extension://${id}/`),
+    allowed_origins: mergedIds.map((id) => `chrome-extension://${id}/`),
   };
 
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
@@ -147,7 +164,7 @@ function writeManifest({ ids, remove }) {
   console.log("");
   console.log("─────────────────────────────────────────────────────────");
   console.log("Details (for debugging):");
-  console.log(`  Allowed extension IDs:  ${ids.join(", ")}`);
+  console.log(`  Allowed extension IDs:  ${mergedIds.join(", ")}`);
   console.log(`  Manifest:               ${tildify(manifestPath)}`);
   console.log(`  Host script:            ${tildify(hostPath)}`);
   console.log("");
