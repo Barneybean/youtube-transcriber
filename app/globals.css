@@ -9,6 +9,16 @@
   --muted: 0 0% 70%;
   --muted-2: 0 0% 55%;
   --accent: 38 30% 50%;
+
+  /* --- Edges (prefer over 1px borders) ---
+     Inner-shadow rings simulate borders without the harsh hairline.
+     Compose with drop shadows: box-shadow: var(--edge), 0 26px 70px rgba(0,0,0,0.34); */
+  --edge: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --edge-strong: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+  --edge-top: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --edge-accent: inset 0 0 0 1px hsl(var(--accent) / 0.5);
+  --edge-danger: inset 0 0 0 1px rgba(208, 111, 111, 0.40);
+  --shadow: 0 26px 70px rgba(0, 0, 0, 0.34);
 }
 
 html,

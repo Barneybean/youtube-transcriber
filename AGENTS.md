@@ -2,6 +2,10 @@
 
 Next.js 15 app — local YouTube transcription via Whisper + yt-dlp. Runs at `localhost:19720`.
 
+## Visual rules
+
+Before generating any UI, components, or CSS, read `docs/VISUAL-RULES.md`. Edge tokens replace 1px borders (`shadow-[var(--edge)]` not `border`); hover via translucent overlay, not color swap. Append corrections to that file with the "update so this never happens again" pattern when output looks cheap.
+
 ## Session continuity
 
 Before ending a session or when context usage exceeds ~75%, update these two files and alert user when doing this so they know we have reached 75%:

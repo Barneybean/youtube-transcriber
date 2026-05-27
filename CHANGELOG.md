@@ -5,6 +5,23 @@
 ### Fixed
 - **Embed-disabled videos no longer fail with "private or restricted" (YTT-319)** — `lib/transcript.ts:fetchMetadata()` was throwing on oEmbed 401 with a misleading "private or restricted — metadata unavailable" error, and because metadata + transcript run in `Promise.all`, the entire transcribe operation failed. But oEmbed 401s happen on **publicly viewable** videos whenever the channel has disabled embed (common) or the video is age-restricted. Confirmed via direct curl: `IFElGv5ZmRM` (Hormozi-adjacent talk) → 401 every time, both URL formats and with/without browser User-Agent; a normal video (`dQw4w9WgXcQ`) → 200. Now `fetchMetadata` falls back to placeholder metadata (`title: "Untitled"`, `author: "Unknown"`, thumbnail URL guessed from videoId) on any non-OK response other than 404. 404 still throws "video not found". Transcript path is independent of oEmbed, so the user gets their transcript with a placeholder title instead of a wrongful error.
 
+### Removed
+- **Unused manifest permissions (1.6.27)** — Removed `downloads`, `contextMenus`, and `clipboardWrite` from `optional_permissions`. Chrome Web Store rejection (Purple Potassium) flagged `downloads` and `contextMenus` as never requested. Audited the remainder: `clipboardWrite` was also unused — all four `navigator.clipboard.writeText` sites fire from user-gesture click handlers in the side panel, which doesn't need the permission in MV3. No functional change.
+
+## 2026-05-10
+
+### Added
+- **Self-hosted setup wall (1.6.26)** — First-time switch from Cloud to Self-hosted now opens a modal disclosing requirements (~3GB Whisper model, Python 3.10+, ffmpeg, native messaging host, local server) and performance reality (~2-3hrs per 1hr video on Apple Silicon, cloud is ~5× faster). "Stay on Cloud" reverts the toggle; "Continue" marks the user as graduated, opens the GitHub install guide, and switches the mode. Existing self-hosted users are retroactively flagged so they skip the wall and see a one-time toast that the toggle moved.
+- **Advanced section in Settings (1.6.26)** — Self-hosted mode toggle moved out of the top of Settings into a collapsible Advanced section so casual cloud users aren't lured into flipping away from the paid product. Cloud is presented as recommended; the toggle stays reachable for users who genuinely need it.
+- **Local-detected banner dismiss (1.6.26)** — The "Local server detected · Switch to self-hosted" banner now has a × button. Dismissal persists in `chrome.storage.sync` so casual cloud users with an unrelated localhost server (other tools on :19720) aren't repeatedly nudged.
+
+### Changed
+- **Provider picker checkmark (1.6.26)** — The summarize provider menu now shows a checkmark on the selected provider and rebuilds on each open so the highlight reflects the latest selection.
+- **Store listing — data-use disclosures rewritten** — Chrome Web Store rejected the previous submission's data-use table. Updated to accurately mark Personally identifiable information (email via Supabase Auth), Authentication information (Supabase session cookie + `ytt_sk_…` API keys), Location (IP, logged for per-IP rate limiting), and Web history (transcribed URLs) as **Yes** in cloud mode. Local mode collects none of these — clarified inline. Added justification for the `nativeMessaging` permission. Single-purpose statement tightened. GitHub URL updated to `lifesized/transcriber`.
+
+### Fixed
+- **Connectors skeleton invisible during load (1.6.26)** — Two compounding issues: (1) `el.destinationsSection.hidden = false` ran synchronously while the persisted-cache read was async, leaving a visible empty section under the CONNECTORS label until cached or skeleton rows painted; (2) the persisted cache was mode-agnostic, so a local→cloud switch would briefly paint the local list (Obsidian only) before the cloud fetch returned. (3) The skeleton shimmer gradient (4%→9% white) was imperceptible on the dark side panel. Fixes: paint skeleton synchronously before any await whenever the in-memory cache is null; tag persisted cache with `mode` so a stale-mode read returns null and skeleton stays through the network fetch; bump shimmer contrast to 8%→18%.
+
 ## 2026-05-08
 
 ### Changed

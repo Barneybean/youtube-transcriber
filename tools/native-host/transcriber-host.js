@@ -137,8 +137,11 @@ async function startServer() {
       : path.join(nodeBinDir, "npm");
   const extendedPath = [
     nodeBinDir,
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
+    "/opt/homebrew/bin",          // macOS Homebrew (Apple Silicon)
+    "/usr/local/bin",              // macOS Homebrew (Intel) / Linux user-installed
+    path.join(os.homedir(), ".local", "bin"), // Linux per-user binaries
+    path.join(os.homedir(), "bin"),           // BSD/Linux per-user binaries
+    "/snap/bin",                   // Linux Snap
     "/usr/bin",
     "/bin",
     process.env.PATH || "",
