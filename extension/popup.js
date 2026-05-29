@@ -293,12 +293,11 @@ const LLM_PROVIDERS = [
     // granted — injects prompt into the composer and auto-submits.
     handoffOrigins: ["https://chatgpt.com/*"],
     handoffUrl: "https://chatgpt.com/",
-    // Fallback when the user declines the host permission: ChatGPT supports
-    // URL prefill via ?q=, which populates the composer but requires the
-    // user to click Send manually.
-    urlTemplate: "https://chatgpt.com/?q={prompt}",
-    clipboardFallback: false,
-    openUrl: null,
+    // Never place transcripts in ChatGPT URL params. Long transcripts can
+    // trigger HTTP 431 before the content script can recover.
+    urlTemplate: null,
+    clipboardFallback: true,
+    openUrl: "https://chatgpt.com/",
     icon: LLM_ICONS.chatgpt,
   },
   {
@@ -539,8 +538,8 @@ async function launchWithProvider(provider, transcriptId, videoTitle) {
     if (launched) return;
   }
 
-  // Fallback 1: URL prefill template (ChatGPT's ?q=) — puts text in the
-  // composer but user still has to click Send.
+  // Fallback 1: URL prefill template. Providers should avoid this for full
+  // transcripts because browser/site request limits can reject long URLs.
   if (provider.urlTemplate) {
     const encoded = encodeURIComponent(prompt);
     const maxLen = 6000;

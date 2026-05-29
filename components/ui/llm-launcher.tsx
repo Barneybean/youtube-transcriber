@@ -29,8 +29,10 @@ const PROVIDERS: LlmProvider[] = [
   {
     id: "chatgpt",
     name: "ChatGPT",
-    urlTemplate: "https://chatgpt.com/?q={prompt}",
-    clipboardFallback: false,
+    // Avoid transcript-in-URL launches; long prompts can hit browser/site
+    // request limits before ChatGPT has a chance to load.
+    urlTemplate: null,
+    clipboardFallback: true,
     icon: PROVIDER_ICONS.chatgpt,
   },
   {
@@ -45,6 +47,7 @@ const PROVIDERS: LlmProvider[] = [
 ];
 
 const OPEN_URLS: Record<string, string> = {
+  chatgpt: "https://chatgpt.com/",
   claude: "https://claude.ai/",
 };
 
