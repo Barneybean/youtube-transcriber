@@ -38,7 +38,7 @@ Transcribe any YouTube video or Spotify podcast episode directly from your brows
 
 The extension works in two modes:
 
-- **Cloud** (default) — transcribe via [transcribed.dev](https://www.transcribed.dev). Create a free account, enter your API key in extension settings, and go. No local setup needed.
+- **Cloud** (default) — hosted transcription for private beta users. Enter your API key in extension settings and go. No local setup needed.
 - **Self-hosted** — connect to your local instance at `localhost:19720`. Switch to "Self-hosted" in extension settings.
 
 ### Install from Chrome Web Store
@@ -57,7 +57,7 @@ The extension works in two modes:
 
 ### Usage
 
-Navigate to any YouTube video or Spotify episode, open the side panel, and click **Transcribe**. In cloud mode, transcripts are available at [transcribed.dev](https://www.transcribed.dev). In self-hosted mode, they open in the local web app at `http://localhost:19720`.
+Navigate to any YouTube video or Spotify episode, open the side panel, and click **Transcribe**. In cloud mode, transcripts open in the hosted app. In self-hosted mode, they open in the local web app at `http://localhost:19720`.
 
 ### Connectors — send transcripts to Obsidian or Notion
 
@@ -71,7 +71,7 @@ Each transcript row's `⋯` menu can push the result to an external app. Connect
 4. (Recommended for long transcripts) Install the [Advanced URI](https://github.com/Vinzent03/obsidian-advanced-uri) community plugin in Obsidian, then expand **More** under the vault field and check **Use Advanced URI plugin**. Stock `obsidian://new` has a URL length cap that truncates long videos; Advanced URI handles them reliably.
 5. From any recent transcript, click `⋯` → **Send to Obsidian**. Allow the protocol handler the first time Chrome prompts you.
 
-**Notion** — cloud mode only. Uses OAuth; tokens are stored encrypted on transcribed.dev. Toggle **Notion** on in Connectors, authorize from the side panel, and share at least one page or database (a dedicated database works best) with the integration. Full setup: [docs/destinations](https://www.transcribed.dev/docs/destinations).
+**Notion** — cloud mode only. Uses OAuth; tokens are stored encrypted by the hosted service. Toggle **Notion** on in Connectors, authorize from the side panel, and share at least one page or database (a dedicated database works best) with the integration. Setup docs will ship with the hosted version.
 
 ---
 
