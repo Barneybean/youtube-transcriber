@@ -120,25 +120,6 @@ Add one or more cloud providers in **Settings** (gear icon, bottom-left). YouTub
 - **OpenRouter** — many transcription models through one key from [openrouter.ai/keys](https://openrouter.ai/keys).
 - **Custom endpoint** — any OpenAI-compatible transcription API (base URL + key + model).
 
-## Language Preference
-
-By default, the app fetches English captions. Change it per-request or globally:
-
-```bash
-# Per-request
-curl -X POST http://localhost:19720/api/transcripts \
-  -H 'Content-Type: application/json' \
-  -d '{"url": "https://youtube.com/watch?v=...", "lang": "es"}'
-
-# Multi-language priority — first available wins
--d '{"url": "...", "lang": "ja,en"}'
-```
-
-```env
-# Global default (.env)
-YTT_CAPTION_LANGS="zh-Hans,zh-Hant,en"
-```
-
 ## Manual Installation
 
 If the automated setup doesn't work or you prefer to do it yourself:
