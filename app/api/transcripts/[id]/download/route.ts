@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { formatTranscriptionSource } from "@/lib/transcription-policy";
 import type { TranscriptSegment } from "@/lib/types";
 
 function formatTimestamp(ms: number): string {
@@ -42,6 +43,7 @@ export async function GET(
     `**Author:** ${video.author}`,
     `**URL:** ${video.videoUrl}`,
     `**Recorded:** ${capturedDate}`,
+    `**Transcriber:** ${formatTranscriptionSource(video.source)}`,
     "",
     "---",
     "",

@@ -2,6 +2,9 @@
   "name": "youtube-transcriber",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9 <25"
+  },
   "scripts": {
     "setup": "bash scripts/setup.sh",
     "dev": "next dev -p 19720 --hostname 127.0.0.1 --webpack",
@@ -14,6 +17,7 @@
     "reset-data": "tsx scripts/reset-data.ts",
     "backup": "tsx scripts/backup.ts",
     "restore": "tsx scripts/restore.ts",
+    "backfill-transcriber-sources": "tsx scripts/backfill-transcriber-sources.ts",
     "fresh": "tsx scripts/fresh.ts",
     "test:setup": "bash scripts/test-setup.sh",
     "install-native-host": "node scripts/install-native-host.js",
@@ -25,6 +29,7 @@
   "author": "",
   "license": "AGPL-3.0-or-later",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.3",
     "@prisma/adapter-better-sqlite3": "^7.4.0",
     "@prisma/client": "^7.4.0",
     "dotenv": "^17.2.4",

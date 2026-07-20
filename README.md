@@ -2,13 +2,9 @@
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
-**YouTube & Spotify podcast to LLM-ready transcript in one click. Runs locally, costs nothing.**
-
+**YouTube research to organized local Markdown in one click. Runs locally, costs nothing.**
 
 https://github.com/user-attachments/assets/32491284-5c78-4a74-a580-ff3a8c256243
-
-
-
 
 **Don't want to install anything?** A hosted version is coming soon — no setup required. **[Join the waitlist →](https://waitlist-site-alpha.vercel.app)**
 
@@ -21,18 +17,23 @@ npm run setup
 npm run dev
 ```
 
-Open [http://localhost:19720](http://localhost:19720) — paste a YouTube or Spotify podcast URL, hit Transcribe, done.
+Open [http://localhost:19720](http://localhost:19720), paste a YouTube video or channel URL, and start the export. Transcript files are saved under `Desktop/AI Trading/Youtube_Transcript/<Channel Name>/`; existing files are skipped automatically when you run the same source again.
+
+Use Node.js 24 (`.nvmrc` is included). With Homebrew on macOS:
+
+```bash
+export PATH="$(brew --prefix node@24)/bin:$PATH"
+```
 
 > **Mac/Linux only for auto-setup.** Windows: use WSL or follow the [Manual Installation](#manual-installation) section.
 
-> `npm run setup` installs all dependencies (yt-dlp, ffmpeg, Whisper, MLX on Apple Silicon) and configures everything automatically. Requires Node.js 18+, Python 3.8+, and a package manager (Homebrew / apt / dnf / pacman).
+> `npm run setup` installs all dependencies (yt-dlp, ffmpeg, Whisper, MLX on Apple Silicon) and configures everything automatically. Requires Node.js 20.9–24, Python 3.8+, and a package manager (Homebrew / apt / dnf / pacman).
 
 ## Chrome Extension
+
 <img width="375" height="565" alt="CleanShot 2026-03-17 at 22 53 31@2x" src="https://github.com/user-attachments/assets/d4bccf92-9941-46cc-b4f4-b7bbc3454ff7" />
 
-
 https://github.com/user-attachments/assets/081c8d90-a6e1-4b4d-b6cd-bc8787bc0a3b
-
 
 Transcribe any YouTube video or Spotify podcast episode directly from your browser without leaving the page. The extension opens as a persistent side panel — it stays open as you navigate between videos and detects each one automatically.
 
@@ -94,18 +95,14 @@ npm run setup && npm run dev
 
 **Claude Desktop / Cursor** — run `npm run mcp:config` and add the output to your client config ([full setup guide](./docs/MCP.md)):
 
-| Client | Config file |
-|--------|-------------|
+| Client         | Config file                                                       |
+| -------------- | ----------------------------------------------------------------- |
 | Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Cursor | `.cursor/mcp.json` |
+| Cursor         | `.cursor/mcp.json`                                                |
 
 ### Skill (no server needed)
 
-
-
 https://github.com/user-attachments/assets/73a62192-746c-4ec0-b1d5-b46608441bdd
-
-
 
 Install as a Claude Code or OpenClaw skill. Two flavors: **Lite** (zero setup, just `yt-dlp`, YouTube subtitles only) or **Full** (requires the service running, adds Whisper fallback, diarization, and persistent library).
 
@@ -117,22 +114,22 @@ cp contrib/claude-code/SKILL-lite.md ~/.claude/skills/youtube-transcriber/SKILL.
 cp -r contrib/claude-code ~/.claude/skills/youtube-transcriber
 ```
 
-| | Lite Skill | Full Skill / MCP |
-|--|:---:|:----:|
-| YouTube captions | Yes | Yes |
-| Auto-generated subs | Yes | Yes |
-| Whisper transcription | — | Yes |
-| Speaker diarization | — | Yes |
-| Persistent library | — | Yes |
-| Requires server | No | Yes |
+|                       | Lite Skill | Full Skill / MCP |
+| --------------------- | :--------: | :--------------: |
+| YouTube captions      |    Yes     |       Yes        |
+| Auto-generated subs   |    Yes     |       Yes        |
+| Whisper transcription |     —      |       Yes        |
+| Speaker diarization   |     —      |       Yes        |
+| Persistent library    |     —      |       Yes        |
+| Requires server       |     No     |       Yes        |
 
 ### Triggers
 
 Once set up (MCP or skill), just type naturally:
 
-> *"summarize https://youtube.com/watch?v=..."*
-> *"ts https://youtube.com/watch?v=..."* (transcribe + summarize)
-> *"t https://youtube.com/watch?v=..."* (transcript only)
+> _"summarize https://youtube.com/watch?v=..."_
+> _"ts https://youtube.com/watch?v=..."_ (transcribe + summarize)
+> _"t https://youtube.com/watch?v=..."_ (transcript only)
 
 Or just paste a YouTube URL — it auto-activates.
 
@@ -143,12 +140,17 @@ Or just paste a YouTube URL — it auto-activates.
 Paste a URL. The app grabs the transcript using the fastest method available on your system:
 
 **YouTube:**
+
 1. **YouTube Captions** — fetches official captions when they exist (< 5 sec)
-2. **Cloud Whisper** — optional Groq, OpenRouter, or custom API with your own key (10-30 sec for 10 min)
-3. **MLX Whisper** — local GPU transcription on Apple Silicon (30-60 sec for 10 min)
-4. **OpenAI Whisper** — local CPU fallback that works everywhere (2-5 min for 10 min)
+2. **Groq Whisper API** — when configured, Groq is the fixed first audio fallback after captions
+3. **OpenAI Whisper API** — when configured, OpenAI runs after Groq
+4. **Ordered cloud fallbacks** — enabled OpenRouter and custom providers run in the order selected in Settings
+5. **Local Whisper** — always the final fallback
+
+Every exported Markdown file includes a `Transcriber` field, and batch summaries list the source used for every file.
 
 **Spotify Podcasts:**
+
 1. Fetches episode metadata from Spotify's official API
 2. Discovers the podcast's public RSS feed via iTunes
 3. Downloads full episode audio from the podcast CDN
@@ -160,8 +162,11 @@ Works fully offline by default for YouTube. Cloud Whisper is optional — bring 
 
 ## Features
 
+- **Channel-organized local export** — process one video or a complete YouTube channel into timestamped Markdown files grouped by channel name
+- **Authenticated members-only access** — use your signed-in Chrome profile for channels and videos included in your memberships
+- **Checkpointed batch resume** — reuse stored transcripts, skip completed files, retry failures, and stop safely after the current video
 - **YouTube + Spotify** — paste a YouTube video URL or Spotify podcast episode URL
-- **Local + cloud transcription** — free local Whisper by default, optional cloud providers (Groq, OpenRouter, or custom endpoint) for faster results with your own API key
+- **Local + cloud transcription** — free local Whisper by default, with optional OpenAI, Groq, OpenRouter, or custom endpoints
 - **Chrome extension** — persistent side panel that transcribes YouTube videos and Spotify episodes from your browser
 - **Multi-language captions** — request captions in any language YouTube supports (see [Language Preference](#language-preference) below)
 - **Summarize with LLM** — send any transcript straight to ChatGPT or Claude. ChatGPT opens with the prompt pre-filled; Claude copies it to your clipboard so you can paste (⌘V) into a new chat
@@ -176,9 +181,14 @@ Works fully offline by default for YouTube. Cloud Whisper is optional — bring 
 Full REST API docs: [`docs/API.md`](./docs/API.md) | OpenAPI spec: [`docs/openapi.yaml`](./docs/openapi.yaml)
 
 ## Cloud Transcription Providers
+
 <img width="1824" height="1175" alt="CleanShot 2026-03-17 at 22 50 27" src="https://github.com/user-attachments/assets/4a413c9b-965c-44d0-a264-2b1ae9ed12d5" />
 
-Add one or more cloud providers in **Settings** (gear icon, bottom-left). Drag to reorder priority — the app tries each enabled provider in order, then falls back to local Whisper.
+Add one or more cloud providers in **Settings** (gear icon, bottom-left). YouTube captions are always attempted first. When configured, Groq is the first audio fallback and OpenAI is next; drag the remaining cloud providers to set their order. Local Whisper is always last.
+
+### OpenAI Whisper API
+
+Uses OpenAI's hosted `whisper-1` transcription endpoint. Create an API key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys). OpenAI API billing is separate from a ChatGPT Plus or Pro subscription.
 
 ### Groq (Free)
 
@@ -207,6 +217,7 @@ Point to any OpenAI-compatible transcription API by providing a base URL, API ke
 By default, the app fetches English captions. You can change this per-request or globally.
 
 **Per-request** — pass `lang` in the API body:
+
 ```bash
 curl -X POST http://localhost:19720/api/transcripts \
   -H 'Content-Type: application/json' \
@@ -214,11 +225,13 @@ curl -X POST http://localhost:19720/api/transcripts \
 ```
 
 **Multi-language priority** — tries each language in order, falls back to first available:
+
 ```bash
 -d '{"url": "...", "lang": "ja,en"}'   # Japanese preferred, English fallback
 ```
 
 **Global default** — set in `.env`:
+
 ```env
 YTT_CAPTION_LANGS="zh-Hans,zh-Hant,en"
 ```
@@ -274,6 +287,7 @@ WHISPER_PYTHON_BIN="/path/to/your/.venv/bin/python3"
 ```
 
 **Windows paths:**
+
 ```env
 WHISPER_CLI="C:\\Users\\YourName\\project\\.venv\\Scripts\\whisper.exe"
 WHISPER_PYTHON_BIN="C:\\Users\\YourName\\project\\.venv\\Scripts\\python.exe"
@@ -307,6 +321,7 @@ Returns JSON with per-check pass/fail — useful for Docker health checks or deb
 - Check that `WHISPER_CLI` and `WHISPER_PYTHON_BIN` paths in `.env` are correct
 - Use absolute paths, not relative paths
 - Restart the dev server after updating `.env`
+
 </details>
 
 <details>
@@ -316,6 +331,7 @@ Returns JSON with per-check pass/fail — useful for Docker health checks or deb
 - On Apple Silicon, install `mlx-whisper` for 3-5x local speedup
 - Use smaller Whisper models (`tiny`, `base`) for faster local results
 - Set `WHISPER_BACKEND="mlx"` in `.env` to force MLX
+
 </details>
 
 <details>
@@ -324,6 +340,7 @@ Returns JSON with per-check pass/fail — useful for Docker health checks or deb
 - The app automatically tries multiple InnerTube clients
 - Wait a few minutes and retry if YouTube blocks requests
 - Disable VPN if you're getting consistent 403 errors
+
 </details>
 
 ## Contributing

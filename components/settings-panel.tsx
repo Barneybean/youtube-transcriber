@@ -31,12 +31,13 @@ type FallbackItem =
   | { type: "local"; id: "__local_whisper__"; enabled: boolean; priority: number }
   | { type: "cloud"; id: string; provider: string; apiKey: string; model: string | null; baseUrl: string | null; enabled: boolean; priority: number };
 
-type ProviderType = "openrouter" | "groq" | "custom";
+type ProviderType = "openai" | "openrouter" | "groq" | "custom";
 
 const DAILY_LIMIT = 14_400;
 const GROQ_COST_PER_SECOND = 0.0001; // $0.006/min beyond free tier
 
 const PROVIDER_LABELS: Record<ProviderType, string> = {
+  openai: "OpenAI Whisper API",
   openrouter: "OpenRouter",
   groq: "Groq",
   custom: "Custom Endpoint",
@@ -197,7 +198,6 @@ function ModelSelect({
     </div>
   );
 }
-
 // ---------------------------------------------------------------------------
 // Toggle
 // ---------------------------------------------------------------------------
@@ -358,12 +358,27 @@ export function SettingsPanel() {
       enabled: p.enabled,
       priority: p.priority,
     })),
-  ].sort((a, b) => a.priority - b.priority);
+  ].sort((a, b) => {
+    if (a.type === "local" || b.type === "local") {
+      if (a.type === b.type) return 0;
+      return a.type === "local" ? 1 : -1;
+    }
+    const pinnedProviders = ["groq", "openai"];
+    const aPinned = pinnedProviders.indexOf(a.provider);
+    const bPinned = pinnedProviders.indexOf(b.provider);
+    if (aPinned !== -1 || bPinned !== -1) {
+      if (aPinned === -1) return 1;
+      if (bPinned === -1) return -1;
+      return aPinned - bPinned;
+    }
+    return a.priority - b.priority;
+  });
 
   // Fallback order text (enabled items only)
   const enabledNames = items
     .filter((i) => i.enabled)
     .map((i) => i.type === "local" ? "Local Whisper" : PROVIDER_LABELS[i.provider as ProviderType] || i.provider);
+  const pipelineNames = ["YouTube captions", ...enabledNames];
 
   // ---------------------------------------------------------------------------
   // Reorder
@@ -379,6 +394,9 @@ export function SettingsPanel() {
   }
 
   function handleDragStart(id: string) {
+    const item = items.find((candidate) => candidate.id === id);
+    if (item?.type === "local") return;
+    if (item?.type === "cloud" && ["groq", "openai"].includes(item.provider)) return;
     setDragId(id);
   }
 
@@ -392,6 +410,12 @@ export function SettingsPanel() {
   }
 
   function handleDrop(targetId: string) {
+    const target = items.find((item) => item.id === targetId);
+    if (target?.type === "local" || (target?.type === "cloud" && ["groq", "openai"].includes(target.provider))) {
+      setDragId(null);
+      setDragOverId(null);
+      return;
+    }
     if (!dragId || dragId === targetId) {
       setDragId(null);
       setDragOverId(null);
@@ -505,8 +529,8 @@ export function SettingsPanel() {
     <div className="space-y-8">
       {/* Fallback order summary */}
       <p className="text-sm text-white/40">
-        <span className="font-medium text-white/75">Transcription fallback order:</span>{" "}
-        {enabledNames.length > 0 ? enabledNames.join(" \u2192 ") : "None configured"}
+        <span className="font-medium text-white/75">Transcription pipeline:</span>{" "}
+        {pipelineNames.join(" \u2192 ")}
       </p>
 
       {/* Unified reorderable list */}
@@ -515,11 +539,17 @@ export function SettingsPanel() {
           const isDragging = dragId === item.id;
           const isDragOver = dragOverId === item.id;
           const result = item.type === "cloud" ? testResults[item.id] : null;
+          const isPinnedProvider = item.type === "cloud" && ["groq", "openai"].includes(item.provider);
+          const isFixed = isPinnedProvider || item.type === "local";
+          const pinnedProviderOrder = ["groq", "openai"].filter((provider) =>
+            providers.some((candidate) => candidate.provider === provider)
+          );
+          const fixedPosition = item.type === "cloud" ? pinnedProviderOrder.indexOf(item.provider) + 2 : -1;
 
           return (
             <div
               key={item.id}
-              draggable
+              draggable={!isFixed}
               onDragStart={() => handleDragStart(item.id)}
               onDragOver={(e) => handleDragOver(e, item.id)}
               onDragLeave={handleDragLeave}
@@ -533,9 +563,18 @@ export function SettingsPanel() {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="cursor-grab active:cursor-grabbing">
-                    <DragHandle />
-                  </div>
+                  {isFixed ? (
+                    <span
+                      className="w-4 text-center text-xs text-white/25"
+                      title={item.type === "local" ? "Fixed as the final fallback" : "Fixed after YouTube captions"}
+                    >
+                      {item.type === "local" ? "↓" : fixedPosition}
+                    </span>
+                  ) : (
+                    <div className="cursor-grab active:cursor-grabbing">
+                      <DragHandle />
+                    </div>
+                  )}
                   <span className="text-sm font-medium text-white/70">
                     {item.type === "local"
                       ? "Local Whisper"
@@ -598,11 +637,18 @@ export function SettingsPanel() {
               {item.type === "cloud" && item.provider !== "openrouter" && item.model && (
                 <p className="mt-1 pl-7 text-xs text-white/25">{item.model}</p>
               )}
+              {isPinnedProvider && !item.model && (
+                <p className="mt-1 pl-7 text-xs text-white/30">
+                  {item.provider === "groq"
+                    ? "whisper-large-v3-turbo · first audio fallback"
+                    : "whisper-1 · after Groq when configured"}
+                </p>
+              )}
 
               {/* Local Whisper description */}
               {item.type === "local" && (
                 <p className="mt-1 pl-7 text-xs text-white/30">
-                  Runs locally — no file size limit, no API key needed
+                  Final fallback · runs locally with no file size limit or API key
                 </p>
               )}
 
@@ -621,7 +667,7 @@ export function SettingsPanel() {
           <button
             onClick={() => {
               const used = new Set(providers.map((p) => p.provider));
-              const available: ProviderType[] = (["openrouter", "groq", "custom"] as ProviderType[]).filter((t) => !used.has(t));
+              const available: ProviderType[] = (["groq", "openai", "openrouter", "custom"] as ProviderType[]).filter((t) => !used.has(t));
               if (available.length === 0) return;
               setNewProvider(available[0]);
               setNewApiKey("");
@@ -639,8 +685,9 @@ export function SettingsPanel() {
                 onChange={(e) => setNewProvider(e.target.value as ProviderType)}
                 className="h-9 rounded-lg border border-white/10 bg-[hsl(var(--panel))] px-3 text-sm text-white/90 focus:outline-none"
               >
-                {!providers.some((p) => p.provider === "openrouter") && <option value="openrouter">OpenRouter</option>}
                 {!providers.some((p) => p.provider === "groq") && <option value="groq">Groq</option>}
+                {!providers.some((p) => p.provider === "openai") && <option value="openai">OpenAI Whisper API</option>}
+                {!providers.some((p) => p.provider === "openrouter") && <option value="openrouter">OpenRouter</option>}
                 <option value="custom">Custom</option>
               </select>
               <input
@@ -775,6 +822,16 @@ export function SettingsPanel() {
       <div className="space-y-4">
         <h2 className="text-sm font-medium text-white/75">Getting API Keys</h2>
         <div className="space-y-3">
+          <div>
+            <span className="text-sm font-medium text-white/50">OpenAI Whisper API</span>
+            <span className="text-sm text-white/40">
+              {" \u2014 "}Create an API key at{" "}
+              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-white/60 underline decoration-white/20 hover:text-white hover:decoration-white/40">
+                platform.openai.com
+              </a>
+              . API billing is separate from a ChatGPT subscription.
+            </span>
+          </div>
           <div>
             <span className="text-sm font-medium text-white/50">OpenRouter</span>
             <span className="text-sm text-white/40">

@@ -5,7 +5,7 @@ import { promisify } from "util";
 import type { TranscriptSegment, VideoMetadata, VideoTranscriptResult } from "./types";
 import { transcriptionProgress } from "./progress";
 import { isWhisperEnabled, getWhisperPriority, getEnabledProviders, transcribeWithProvider } from "./providers";
-import { transcribeAudioFileWithWhisper } from "./whisper";
+import { transcribeAudioFileWithWhisper, getWhisperModel } from "./whisper";
 
 const execFileAsync = promisify(execFile);
 const FFMPEG_PATH = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
@@ -418,7 +418,7 @@ async function transcribeSpotifyAudio(
       } else {
         try {
           console.log(`[spotify] Trying local Whisper for ${episodeId}...`);
-          const segments = await transcribeAudioFileWithWhisper(audioPath, "base", (evt) => {
+          const segments = await transcribeAudioFileWithWhisper(audioPath, getWhisperModel(), (evt) => {
             transcriptionProgress.emit("progress", {
               stage: evt.stage,
               progress: evt.progress,

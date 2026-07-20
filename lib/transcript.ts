@@ -7,10 +7,12 @@ import { extractVideoId } from "./youtube";
 import { parseContentUrl } from "./url-parser";
 import { getSpotifyTranscript } from "./spotify";
 import { getGenericTranscript } from "./generic-video";
-import { transcribeWithWhisper, downloadAudio, type ProgressCallback, getYtdlpPath } from "./whisper";
+import { transcribeWithWhisper, downloadAudio, type ProgressCallback, getYtdlpPath, getWhisperModel } from "./whisper";
 import { transcribeWithCloudWhisper, getCloudWhisperConfig } from "./whisper-cloud";
 import { isWhisperEnabled, getWhisperPriority, getEnabledProviders, transcribeWithProvider } from "./providers";
 import { transcriptionProgress } from "./progress";
+import { buildAudioFallbackOrder } from "./transcription-policy";
+import { proofreadSegments, getProofreadConfig, shouldProofread } from "./proofread";
 
 const execFileAsync = promisify(execFile);
 import type {
@@ -538,9 +540,8 @@ async function fetchTranscriptWebFallback(
 }
 
 /**
- * Audio transcription fallback — respects user-defined priority order.
- * Local Whisper and cloud providers are interleaved based on their priority.
- * Called when YouTube captions are unavailable.
+ * Audio transcription fallback used when YouTube captions are unavailable.
+ * Groq runs first, then OpenAI, other cloud providers, and local Whisper last.
  */
 async function transcribeAudioFallback(
   videoId: string
@@ -551,23 +552,9 @@ async function transcribeAudioFallback(
     getEnabledProviders(),
   ]);
 
-  // Build a unified ordered list of steps
-  type Step = { type: "local" } | { type: "cloud"; index: number };
-  const steps: Step[] = [];
-
-  for (let i = 0; i < providers.length; i++) {
-    steps.push({ type: "cloud", index: i });
-  }
-  if (whisperEnabled) {
-    steps.push({ type: "local" });
-  }
-
-  // Sort by priority: cloud providers use their array index (already sorted by DB priority),
-  // local whisper uses its stored priority position
-  steps.sort((a, b) => {
-    const pa = a.type === "local" ? whisperPriority : a.index;
-    const pb = b.type === "local" ? whisperPriority : b.index;
-    return pa - pb;
+  const steps = buildAudioFallbackOrder(providers, {
+    enabled: whisperEnabled,
+    priority: whisperPriority,
   });
 
   if (steps.length === 0) {
@@ -589,7 +576,7 @@ async function transcribeAudioFallback(
           statusText: "Downloading audio from YouTube...",
           videoId,
         });
-        const segments = await transcribeWithWhisper(videoId, "base", (evt) => {
+        const segments = await transcribeWithWhisper(videoId, getWhisperModel(), (evt) => {
           if (evt.stage === "transcribing") {
             transcriptionProgress.emit("progress", {
               stage: "transcribing",
@@ -908,11 +895,11 @@ export async function getVideoTranscript(
   const parsed = parseContentUrl(url);
 
   if (parsed.platform === "spotify") {
-    return getSpotifyTranscript(parsed.contentId, parsed.originalUrl);
+    return withProofreading(await getSpotifyTranscript(parsed.contentId, parsed.originalUrl));
   }
 
   if (parsed.platform === "generic") {
-    return getGenericTranscript(parsed.originalUrl);
+    return withProofreading(await getGenericTranscript(parsed.originalUrl));
   }
 
   const videoId = parsed.contentId;
@@ -943,6 +930,8 @@ export async function getVideoTranscript(
     ),
   ]);
 
+  const proofed = await withProofreading(result, videoId);
+
   transcriptionProgress.emit("progress", {
     stage: "done",
     progress: 100,
@@ -950,5 +939,42 @@ export async function getVideoTranscript(
     videoId,
   });
 
-  return result;
+  return proofed;
+}
+
+/**
+ * AI proofreading pass (lib/proofread.ts): fixes ASR errors in the segments
+ * after transcription, before the result is stored. Fail-open — any error
+ * returns the transcript unchanged.
+ */
+async function withProofreading<T extends VideoTranscriptResult & { source: string }>(
+  result: T,
+  videoId?: string
+): Promise<T> {
+  const config = getProofreadConfig();
+  if (!shouldProofread(result.source, config)) return result;
+
+  transcriptionProgress.emit("progress", {
+    stage: "transcribing",
+    progress: 90,
+    statusText: "Proofreading transcript with AI...",
+    videoId,
+  });
+
+  const { segments, proofread, correctedCount } = await proofreadSegments(
+    result.transcript,
+    { title: result.title, author: result.author },
+    config,
+    (fraction) => {
+      transcriptionProgress.emit("progress", {
+        stage: "transcribing",
+        progress: Math.round(90 + fraction * 9),
+        statusText: "Proofreading transcript with AI...",
+        videoId,
+      });
+    }
+  );
+  if (!proofread) return result;
+  console.log(`[transcript] proofread ${result.source}: ${correctedCount} correction(s)`);
+  return { ...result, transcript: segments };
 }

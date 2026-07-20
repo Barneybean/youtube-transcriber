@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-16T00:00:00.000Z",
+  "title": "Design System: Transcript Desk",
+  "extensions": {
+    "colorMeta": {
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Night Canvas",
+        "tonalRamp": [
+          "hsl(0 0% 4%)",
+          "hsl(0 0% 9%)",
+          "hsl(0 0% 18%)",
+          "hsl(0 0% 30%)",
+          "hsl(0 0% 45%)",
+          "hsl(0 0% 62%)",
+          "hsl(0 0% 80%)",
+          "hsl(0 0% 95%)"
+        ]
+      },
+      "research-amber": {
+        "role": "primary",
+        "displayName": "Research Amber",
+        "tonalRamp": [
+          "hsl(38 18% 15%)",
+          "hsl(38 22% 24%)",
+          "hsl(38 26% 34%)",
+          "hsl(38 30% 44%)",
+          "hsl(38 30% 50%)",
+          "hsl(38 28% 62%)",
+          "hsl(38 24% 76%)",
+          "hsl(38 18% 92%)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page purpose and current milestone."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Instructions and human-readable status."
+      },
+      "mono": {
+        "displayName": "File Path",
+        "purpose": "Paths, counts, and identifiers."
+      }
+    },
+    "shadows": [
+      {
+        "name": "quiet-edge",
+        "value": "inset 0 0 0 1px rgba(255,255,255,0.06)",
+        "purpose": "Default control and panel structure."
+      },
+      {
+        "name": "active-edge",
+        "value": "inset 0 0 0 1px hsl(38 30% 50% / 0.5)",
+        "purpose": "Focus and active progress only."
+      },
+      {
+        "name": "ambient-lift",
+        "value": "0 26px 70px rgba(0,0,0,0.34)",
+        "purpose": "Temporary overlays only."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-change",
+        "value": "150ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Hover, focus, and state feedback."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Export Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Starts the one primary workflow.",
+      "html": "<button class=\"ds-btn-primary\">Start export</button>",
+      "css": ".ds-btn-primary { min-height: 44px; padding: 12px 16px; border: 0; border-radius: 6px; background: hsl(38 30% 50%); color: hsl(0 0% 4%); font: 500 14px/1.4 Geist, system-ui, sans-serif; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08); transition: background 150ms, box-shadow 150ms; } .ds-btn-primary:hover { background: hsl(38 30% 56%); } .ds-btn-primary:focus-visible { outline: 2px solid hsl(38 30% 50%); outline-offset: 2px; box-shadow: inset 0 0 0 1px hsl(38 30% 70% / .7); } .ds-btn-primary:active { background: hsl(38 30% 47%); } .ds-btn-primary:disabled { background: hsl(0 0% 14%); color: hsl(0 0% 55%); }"
+    },
+    {
+      "name": "YouTube URL Field",
+      "kind": "input",
+      "refersTo": "url-field",
+      "description": "Accepts a YouTube video or channel URL.",
+      "html": "<input class=\"ds-url-field\" value=\"https://www.youtube.com/@channel/videos\" aria-label=\"YouTube URL\" />",
+      "css": ".ds-url-field { width: 100%; min-height: 48px; padding: 12px 16px; border: 0; border-radius: 6px; background: hsl(0 0% 4%); color: hsl(0 0% 98%); font: 400 14px/1.5 Geist, system-ui, sans-serif; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); transition: background 150ms, box-shadow 150ms; } .ds-url-field:hover { background: hsl(0 0% 6%); } .ds-url-field:focus-visible { outline: 2px solid hsl(38 30% 50%); outline-offset: 2px; box-shadow: inset 0 0 0 1px hsl(38 30% 50% / .5); }"
+    },
+    {
+      "name": "Work Status Row",
+      "kind": "custom",
+      "description": "Shows one factual queue or file outcome.",
+      "html": "<div class=\"ds-status-row\"><span class=\"ds-status-mark\"></span><div><strong>Saved transcript</strong><small>LA Banker/Video title.md</small></div></div>",
+      "css": ".ds-status-row { display: flex; gap: 12px; align-items: flex-start; padding: 16px; border-radius: 6px; background: hsl(0 0% 9%); color: hsl(0 0% 98%); box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); font: 400 14px/1.5 Geist, system-ui, sans-serif; } .ds-status-mark { width: 8px; height: 8px; margin-top: 6px; border-radius: 999px; background: hsl(38 30% 50%); } .ds-status-row strong, .ds-status-row small { display: block; } .ds-status-row small { margin-top: 2px; color: hsl(0 0% 55%); font: 400 12px/1.5 \"Geist Mono\", ui-monospace, monospace; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Research Desk",
+    "overview": "The interface is one quiet work surface for a serious repeated task. It should feel like placing a source on a desk, starting a dependable process, and returning to an organized folder. This is a warm-dark local utility, not a trading terminal or an AI assistant.",
+    "keyCharacteristics": [
+      "One primary action and one clearly labeled input.",
+      "Restrained amber reserved for action, focus, and active progress.",
+      "File destinations and saved outcomes are always explicit.",
+      "Tonal surfaces and inset edges create structure without visible borders.",
+      "Compact, readable status language replaces implementation logs."
+    ],
+    "rules": [
+      {
+        "name": "The One Active Voice Rule",
+        "body": "Amber appears on less than ten percent of a screen and only communicates action or state.",
+        "section": "colors"
+      },
+      {
+        "name": "The No Market Signal Rule",
+        "body": "Red and green never decorate the interface; they appear only in clearly labeled error and success states.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Read Rule",
+        "body": "The user should understand the current state without rereading a paragraph.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Desk Rule",
+        "body": "Resting content stays flat. Elevation appears only when a surface temporarily sits above the workflow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep the URL field, output destination, and primary action in the first viewport.",
+      "Do organize every automatic export under Desktop/Youtube_Transcript/<Channel Name>/.",
+      "Do write progress in plain language with counts and recovery instructions."
+    ],
+    "donts": [
+      "Don't build a trading terminal filled with flashing prices, red/green noise, charts, or urgency cues.",
+      "Don't ship a generic AI dashboard with oversized gradients, feature-card grids, or assistant-like marketing copy.",
+      "Don't make stored database records more prominent than the exported files.",
+      "Don't expose setup-heavy provider, model, or pipeline choices during the normal workflow."
+    ]
+  }
+}

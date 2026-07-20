@@ -6,7 +6,7 @@ import type { TranscriptSegment } from "./types";
 // Types
 // ---------------------------------------------------------------------------
 
-export type ProviderType = "openrouter" | "groq" | "custom";
+export type ProviderType = "openai" | "openrouter" | "groq" | "custom";
 
 export interface ProviderEndpointConfig {
   id: string;
@@ -14,6 +14,7 @@ export interface ProviderEndpointConfig {
   endpoint: string;
   apiKey: string;
   model: string;
+  priority: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -21,16 +22,19 @@ export interface ProviderEndpointConfig {
 // ---------------------------------------------------------------------------
 
 const PROVIDER_TRANSCRIPTION_ENDPOINTS: Record<Exclude<ProviderType, "custom">, string> = {
+  openai: "https://api.openai.com/v1/audio/transcriptions",
   groq: "https://api.groq.com/openai/v1/audio/transcriptions",
   openrouter: "https://openrouter.ai/api/v1/audio/transcriptions",
 };
 
 const PROVIDER_MODELS_ENDPOINTS: Record<Exclude<ProviderType, "custom">, string> = {
+  openai: "https://api.openai.com/v1/models",
   groq: "https://api.groq.com/openai/v1/models",
   openrouter: "https://openrouter.ai/api/v1/models",
 };
 
 export const DEFAULT_MODELS: Record<Exclude<ProviderType, "custom">, string> = {
+  openai: "whisper-1",
   groq: "whisper-large-v3-turbo",
   openrouter: "google/gemini-2.5-flash",
 };
@@ -78,6 +82,7 @@ export async function getEnabledProviders(): Promise<ProviderEndpointConfig[]> {
         endpoint,
         apiKey: row.apiKey,
         model,
+        priority: row.priority,
       };
     });
   }
@@ -92,6 +97,7 @@ export async function getEnabledProviders(): Promise<ProviderEndpointConfig[]> {
       endpoint: PROVIDER_TRANSCRIPTION_ENDPOINTS[p],
       apiKey: legacyConfig.apiKey,
       model: legacyConfig.model || DEFAULT_MODELS[p],
+      priority: 0,
     }];
   }
 

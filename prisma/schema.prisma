@@ -17,7 +17,7 @@ model Setting {
 
 model ProviderConfig {
   id        String   @id @default(cuid())
-  provider  String   // "openrouter" | "groq" | "custom"
+  provider  String   // "openai" | "openrouter" | "groq" | "custom"
   apiKey    String
   model     String?
   baseUrl   String?  // for custom endpoints only
@@ -30,7 +30,7 @@ model ProviderConfig {
 model DailyUsage {
   id       String @id @default(cuid())
   date     String // ISO date "2026-03-17"
-  provider String // "groq" | "openrouter" | "custom"
+  provider String // "openai" | "groq" | "openrouter" | "custom"
   seconds  Float  @default(0)
 
   @@unique([date, provider])

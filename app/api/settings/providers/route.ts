@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { ProviderType } from "@/lib/providers";
 
-const VALID_PROVIDERS = ["openrouter", "groq", "custom"];
+const VALID_PROVIDERS = ["openai", "openrouter", "groq", "custom"];
 
 function maskApiKey(key: string): string {
   if (key.length <= 4) return "****";

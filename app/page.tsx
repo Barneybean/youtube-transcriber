@@ -1,1624 +1,520 @@
 "use client";
 
-import { Suspense, useEffect, useState, useRef, useCallback } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import type { TranscriptSegment } from "@/lib/types";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { IconButton, iconButtonClassName } from "@/components/ui/icon-button";
-import { LlmLauncher } from "@/components/ui/llm-launcher";
-import { AnimationTuner, DEFAULT_TUNING } from "@/components/animation-tuner";
-import type { MotionTuning } from "@/components/animation-tuner";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-interface QueueItem {
-  url: string;
-  status: "pending" | "processing" | "completed" | "failed";
-  title?: string;
-  id?: string;
-  error?: string;
-  progress: number;
-  statusText: string;
-  startedAt?: number;
-}
+type ExportPhase =
+  "discovering" | "running" | "completed" | "failed" | "cancelled";
+type ExportItemState = "queued" | "processing" | "saved" | "skipped" | "failed";
 
-interface VideoSummary {
-  id: string;
+interface ExportItem {
+  index: number;
   videoId: string;
   title: string;
-  author: string;
-  channelUrl: string | null;
-  thumbnailUrl: string | null;
-  videoUrl: string;
-  source?: string;
-  createdAt: string;
+  url: string;
+  state: ExportItemState;
+  detail?: string;
+  file?: string;
+  segments?: number;
+  attempts?: number;
+}
+
+interface ExportJob {
+  id: string;
+  url: string;
+  phase: ExportPhase;
+  channelName?: string;
+  outputDir?: string;
+  total: number;
+  completed: number;
+  saved: number;
+  skipped: number;
+  failed: number;
+  progress: number;
+  statusText: string;
+  currentIndex?: number;
+  currentTitle?: string;
+  error?: string;
+  startedAt: string;
   updatedAt: string;
+  finishedAt?: string;
+  items: ExportItem[];
 }
 
-interface VideoRecord extends VideoSummary {
-  transcript: string;
-}
+type HealthState = "checking" | "ready" | "unavailable";
 
-interface DebugEvent {
-  id: number;
-  elapsedSec: number;
-  type: string;
-  detail: string;
-}
+const buttonFocus =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[hsl(var(--accent))]";
 
-interface DebugFilters {
-  selection: boolean;
-  fetch: boolean;
-  animation: boolean;
-  layout: boolean;
-  state: boolean;
-}
-
-function isSupportedUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    // Accept any http(s) URL — yt-dlp handles ~1,800 sites via the generic route.
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatTimestamp(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function safeSegmentCount(transcript: string | undefined): number {
-  if (!transcript) return 0;
-  try {
-    const parsed = JSON.parse(transcript);
-    return Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    return 0;
-  }
-}
-
-interface MergedBlock {
-  startMs: number;
-  text: string;
-  speaker?: string;
-}
-
-/**
- * Merge short transcript segments into larger blocks (~40s each).
- * A new block starts when: the gap exceeds 40s, or the speaker changes.
- */
-function mergeSegments(segments: TranscriptSegment[]): MergedBlock[] {
-  if (segments.length === 0) return [];
-  const BLOCK_DURATION_MS = 40_000;
-  const blocks: MergedBlock[] = [];
-  let current: MergedBlock = {
-    startMs: segments[0].startMs,
-    text: segments[0].text,
-    speaker: segments[0].speaker,
-  };
-
-  for (let i = 1; i < segments.length; i++) {
-    const seg = segments[i];
-    const elapsed = seg.startMs - current.startMs;
-    const speakerChanged = seg.speaker !== current.speaker;
-
-    if (elapsed >= BLOCK_DURATION_MS || speakerChanged) {
-      blocks.push(current);
-      current = { startMs: seg.startMs, text: seg.text, speaker: seg.speaker };
-    } else {
-      current.text += " " + seg.text;
-    }
-  }
-  blocks.push(current);
-  return blocks;
-}
-
-function eventCategory(type: string): keyof DebugFilters {
-  if (type.includes("select.") || type.includes("route.") || type.includes("layout.change")) {
-    return "selection";
-  }
-  if (type.includes("fetch") || type.includes("loading") || type.includes("debounce")) {
-    return "fetch";
-  }
-  if (type.includes(".anim.")) return "animation";
-  if (type.includes(".layout.")) return "layout";
-  return "state";
-}
-
-function HomeInner() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const selectedId = searchParams.get("id");
-  const scrollHint = searchParams.get("t");
-  const libraryLayout = searchParams.get("layout") === "tiles" ? "tiles" : "list";
-
-  const [url, setUrl] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [duplicateHint, setDuplicateHint] = useState<{ message: string; id: string } | null>(null);
-  const [queue, setQueue] = useState<QueueItem[]>([]);
-  const [hasCreatedTranscript, setHasCreatedTranscript] = useState(false);
-
-  const [transcripts, setTranscripts] = useState<VideoSummary[]>([]);
-  const [libraryLoading, setLibraryLoading] = useState(true);
-  const [search, setSearch] = useState("");
-
-  const [video, setVideo] = useState<VideoRecord | null>(null);
-  const [videoLoading, setVideoLoading] = useState(false);
-  const [videoError, setVideoError] = useState<string | null>(null);
-  const [closingVideo, setClosingVideo] = useState<VideoRecord | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  const [justCompletedIds, setJustCompletedIds] = useState<Set<string>>(new Set());
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const [completionAlertsEnabled, setCompletionAlertsEnabled] = useState(true);
-  const originalTitleRef = useRef<string>("");
-  const originalFaviconRef = useRef<string>("");
-  const [debugEvents, setDebugEvents] = useState<DebugEvent[]>([]);
-  const [debugPaused, setDebugPaused] = useState(false);
-  const [debugCollapsed, setDebugCollapsed] = useState(false);
-  const [motionTuning, setMotionTuning] = useState<MotionTuning>({ ...DEFAULT_TUNING });
-
-  const queueRef = useRef<QueueItem[]>([]);
-  const processingRef = useRef(false);
-  const didInitRef = useRef(false);
-  const didRunSearchEffectRef = useRef(false);
-  const debugStartRef = useRef<number>(performance.now());
-  const debugIdRef = useRef(0);
-  const progressIntervals = useRef<Map<number, ReturnType<typeof setInterval>>>(
-    new Map()
-  );
-
-  const addDebugEvent = useCallback(
-    (type: string, detail: string) => {
-      if (debugPaused) return;
-      const id = ++debugIdRef.current;
-      const elapsedSec = (performance.now() - debugStartRef.current) / 1000;
-      setDebugEvents((prev) => [{ id, elapsedSec, type, detail }, ...prev].slice(0, 250));
-    },
-    [debugPaused]
-  );
-
-  const fetchTranscripts = useCallback(async (query: string) => {
-    const endpoint = query
-      ? `/api/transcripts?q=${encodeURIComponent(query)}`
-      : "/api/transcripts";
-    addDebugEvent("library.fetch.start", `query="${query || "(empty)"}" endpoint="${endpoint}"`);
-    try {
-      const res = await fetch(endpoint);
-      if (!res.ok) {
-        addDebugEvent("library.fetch.error", `status=${res.status}`);
-        return;
-      }
-      const data = await res.json();
-      setTranscripts(data);
-      addDebugEvent("library.fetch.success", `count=${Array.isArray(data) ? data.length : 0}`);
-    } catch (error) {
-      addDebugEvent("library.fetch.exception", error instanceof Error ? error.message : "unknown");
-    } finally {
-      setLibraryLoading(false);
-      addDebugEvent("library.loading", "setLibraryLoading(false)");
-    }
-  }, [addDebugEvent]);
-
-  useEffect(() => {
-    addDebugEvent("app.mount", "HomeInner mounted");
-  }, [addDebugEvent]);
-
-  const setFaviconBadge = useCallback(() => {
-    if (typeof document === "undefined") return;
-
-    // Save original favicon on first call
-    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (link && !originalFaviconRef.current) {
-      originalFaviconRef.current = link.href;
-    }
-
-    const favicon = new Image();
-    favicon.crossOrigin = "anonymous";
-    favicon.src = link?.href ?? "/favicon.ico";
-    favicon.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = 64;
-      canvas.height = 64;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      ctx.drawImage(favicon, 0, 0, 64, 64);
-
-      // Green badge circle (bottom-right)
-      ctx.beginPath();
-      ctx.arc(52, 52, 12, 0, 2 * Math.PI);
-      ctx.fillStyle = "#22c55e";
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#fff";
-      ctx.stroke();
-
-      // Checkmark
-      ctx.beginPath();
-      ctx.moveTo(46, 52);
-      ctx.lineTo(50, 56);
-      ctx.lineTo(58, 47);
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 3;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.stroke();
-
-      const newHref = canvas.toDataURL("image/png");
-      if (link) {
-        link.href = newHref;
-      } else {
-        const newLink = document.createElement("link");
-        newLink.rel = "icon";
-        newLink.href = newHref;
-        document.head.appendChild(newLink);
-      }
-    };
-  }, []);
-
-  const resetTabNotification = useCallback(() => {
-    if (typeof document === "undefined") return;
-
-    // Restore original title
-    if (originalTitleRef.current) {
-      document.title = originalTitleRef.current;
-    }
-
-    // Restore original favicon
-    if (originalFaviconRef.current) {
-      const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-      if (link) link.href = originalFaviconRef.current;
-    }
-  }, []);
-
-  const notifyTranscriptReady = useCallback(
-    async (title?: string) => {
-      const label = title ? `Transcript ready: ${title}` : "Transcript ready";
-      setToast(label);
-      setTimeout(() => setToast(null), 3000);
-
-      // Update tab title and favicon badge so it's visible from other tabs
-      if (typeof document !== "undefined") {
-        if (!originalTitleRef.current) originalTitleRef.current = document.title;
-        document.title = `✓ ${label}`;
-        setFaviconBadge();
-      }
-
-      if (!completionAlertsEnabled || typeof window === "undefined") {
-        return;
-      }
-
-      try {
-        const audioContext = new window.AudioContext();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        oscillator.type = "sine";
-        oscillator.frequency.value = 880;
-        gainNode.gain.value = 0.0001;
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-
-        const now = audioContext.currentTime;
-        gainNode.gain.exponentialRampToValueAtTime(0.35, now + 0.02);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
-        oscillator.start(now);
-        oscillator.stop(now + 0.4);
-        setTimeout(() => {
-          audioContext.close().catch(() => undefined);
-        }, 500);
-      } catch {
-        // Ignore audio limitations (autoplay policy, etc.)
-      }
-
-      if (!("Notification" in window)) return;
-      if (Notification.permission === "granted") {
-        new Notification("Transcriber", {
-          body: label,
-          silent: true,
-        });
-        return;
-      }
-      if (Notification.permission === "default") {
-        try {
-          const permission = await Notification.requestPermission();
-          if (permission === "granted") {
-            new Notification("Transcriber", {
-              body: label,
-              silent: true,
-            });
-          }
-        } catch {
-          // Ignore notification permission errors
-        }
-      }
-    },
-    [completionAlertsEnabled, setFaviconBadge]
-  );
-
-  useEffect(() => {
-    if (didInitRef.current) return;
-    didInitRef.current = true;
-
-    // Check if user has ever created a transcript
-    const hasTranscripts = localStorage.getItem("hasCreatedTranscript") === "true";
-    const completionAlerts = localStorage.getItem("completionAlertsEnabled");
-    if (completionAlerts !== null) {
-      setCompletionAlertsEnabled(completionAlerts === "true");
-    }
-    setHasCreatedTranscript(hasTranscripts);
-    addDebugEvent("ftu.state", `hasCreatedTranscript=${hasTranscripts}`);
-
-    // Restore view preference from localStorage only once on first mount.
-    const currentLayout = searchParams.get("layout");
-    const savedLayout = localStorage.getItem("libraryLayout");
-    if (!currentLayout && savedLayout) {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("layout", savedLayout);
-      addDebugEvent("layout.restore", `restoring layout=${savedLayout}`);
-      router.push(`/?${params.toString()}`, { scroll: false });
-    }
-
-    setLibraryLoading(true);
-    addDebugEvent("library.loading", "setLibraryLoading(true) initial");
-    fetchTranscripts("");
-  }, [addDebugEvent, fetchTranscripts, router, searchParams]);
-
-  useEffect(() => {
-    // Skip the first run; initial library fetch is handled in the init effect.
-    if (!didRunSearchEffectRef.current) {
-      didRunSearchEffectRef.current = true;
-      addDebugEvent("search.debounce.skip", `initial query="${search}"`);
-      return;
-    }
-
-    addDebugEvent("search.debounce.schedule", `query="${search}" delayMs=250`);
-    const timer = setTimeout(() => {
-      setLibraryLoading(true);
-      addDebugEvent("search.debounce.fire", `query="${search}"`);
-      fetchTranscripts(search);
-    }, 250);
-    return () => {
-      clearTimeout(timer);
-      addDebugEvent("search.debounce.cancel", `query="${search}"`);
-    };
-  }, [addDebugEvent, search, fetchTranscripts]);
-
-  useEffect(() => {
-    async function fetchSelectedVideo(id: string) {
-      addDebugEvent("video.fetch.start", `id=${id}`);
-      // Only update state if values are actually changing to prevent unnecessary re-renders
-      setVideo((prev) => (prev === null ? prev : null));
-      setVideoError((prev) => (prev === null ? prev : null));
-      setVideoLoading((prev) => (prev ? prev : true));
-      try {
-        const res = await fetch(`/api/transcripts/${id}`);
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          setVideoError(data.error || "Transcript not found.");
-          addDebugEvent("video.fetch.error", `id=${id} status=${res.status}`);
-          return;
-        }
-        const data = await res.json();
-        setVideo(data);
-        addDebugEvent("video.fetch.success", `id=${id} segments=${safeSegmentCount(data.transcript)}`);
-      } catch {
-        setVideoError("Failed to load transcript.");
-        addDebugEvent("video.fetch.exception", `id=${id}`);
-      } finally {
-        setVideoLoading(false);
-        addDebugEvent("video.loading", `setVideoLoading(false) id=${id}`);
-      }
-    }
-
-    if (!selectedId) {
-      addDebugEvent("video.selection.clear", "selectedId is empty");
-      setVideo((prev) => (prev === null ? prev : null));
-      setVideoError((prev) => (prev === null ? prev : null));
-      setVideoLoading((prev) => (prev ? false : prev));
-      return;
-    }
-
-    addDebugEvent("video.selection.change", `selectedId=${selectedId}`);
-    fetchSelectedVideo(selectedId);
-
-    // Auto-scroll to the selected transcript — retry until the element
-    // exists in the DOM (library loads async, so it may not be rendered yet).
-    // Uses window.scrollTo to avoid conflicts with browser scroll restoration.
-    let cancelled = false;
-    let attempts = 0;
-    const tryScroll = () => {
-      if (cancelled) return;
-      const el = document.querySelector(`[data-transcript-id="${selectedId}"]`);
-      if (el) {
-        const rect = el.getBoundingClientRect();
-        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-        window.scrollTo({ top: scrollTop + rect.top - 80, behavior: "smooth" });
-      } else if (attempts++ < 30) {
-        setTimeout(tryScroll, 100);
-      }
-    };
-    // Wait for page load and browser scroll restoration to settle
-    setTimeout(tryScroll, 500);
-    return () => { cancelled = true; };
-  }, [addDebugEvent, selectedId, scrollHint]);
-
-  useEffect(() => {
-    addDebugEvent(
-      "state.snapshot",
-      `layout=${libraryLayout} selected=${selectedId ?? "none"} closing=${closingVideo?.id ?? "none"} video=${video?.id ?? "none"} videoLoading=${videoLoading}`
-    );
-  }, [addDebugEvent, libraryLayout, selectedId, closingVideo?.id, video?.id, videoLoading]);
-
-  const selectTranscript = useCallback(
-    (id: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-
-      // Toggle: if clicking the same item, deselect it
-      if (selectedId === id) {
-        // Preserve video data for exit animation
-        setClosingVideo(video);
-        addDebugEvent("select.toggle.close", `id=${id} hasVideo=${Boolean(video?.id)}`);
-
-        // Update URL immediately to trigger exit animation
-        params.delete("id");
-        const qs = params.toString();
-        addDebugEvent("route.push", `close id=${id} qs="${qs}"`);
-        router.push(qs ? `/?${qs}` : "/", { scroll: false });
-      } else {
-        setClosingVideo(null);
-        params.set("id", id);
-        const qs = params.toString();
-        addDebugEvent("select.toggle.open", `id=${id} qs="${qs}"`);
-        router.push(qs ? `/?${qs}` : "/", { scroll: false });
-      }
-    },
-    [addDebugEvent, router, searchParams, selectedId, video]
-  );
-
-  const setLibraryLayout = useCallback(
-    (layout: "tiles" | "list") => {
-      // Save preference to localStorage
-      localStorage.setItem("libraryLayout", layout);
-      addDebugEvent("layout.change", `layout=${layout}`);
-
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("layout", layout);
-      router.push(`/?${params.toString()}`, { scroll: false });
-    },
-    [addDebugEvent, router, searchParams]
-  );
-
-  const clearSelectedTranscript = useCallback(() => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("id");
-    const qs = params.toString();
-    router.push(qs ? `/?${qs}` : "/", { scroll: false });
-  }, [router, searchParams]);
-
-  const handleCopyFromLibrary = useCallback(async (id: string) => {
-    try {
-      const res = await fetch(`/api/transcripts/${id}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      const segs: TranscriptSegment[] = JSON.parse(data.transcript);
-      const text = segs
-        .map((seg, idx) => {
-          const prev = segs[idx - 1];
-          const speakerChanged = seg.speaker && (!prev || prev.speaker !== seg.speaker);
-          const prefix = speakerChanged ? `[${seg.speaker}] ` : "";
-          return `[${formatTimestamp(seg.startMs)}] ${prefix}${seg.text}`;
-        })
-        .join("\n");
-      await navigator.clipboard.writeText(text);
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 2000);
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const updateQueue = useCallback(
-    (updater: (prev: QueueItem[]) => QueueItem[]) => {
-      setQueue((prev) => {
-        const next = updater(prev);
-        queueRef.current = next;
-        return next;
-      });
-    },
-    []
-  );
-
-  const startProgressForItem = useCallback(
-    (idx: number) => {
-      let elapsed = 0;
-      const tick = 500;
-
-      const interval = setInterval(() => {
-        elapsed += tick;
-        const seconds = elapsed / 1000;
-
-        let progress: number;
-        let statusText: string;
-
-        // Fast phase: caption fetching via web scrape typically completes in 2-5s.
-        // Ramp quickly to ~80% in the first 5s so the bar looks nearly done
-        // when captions are found. If it takes longer (Whisper fallback),
-        // the curve flattens and continues slowly toward 95%.
-        if (seconds < 3) {
-          // Quick ramp: 0 → 60% in 3s (caption fetch + parse)
-          progress = seconds * 20;
-          statusText = "Fetching captions...";
-        } else if (seconds < 6) {
-          // 60 → 85% over next 3s (still in caption path)
-          progress = 60 + (seconds - 3) * 8.3;
-          statusText = "Fetching captions...";
-        } else if (seconds < 20) {
-          // Caption path didn't resolve — likely downloading audio for Whisper
-          progress = 85 + (seconds - 6) * 0.35;
-          statusText = "Downloading audio...";
-        } else if (seconds < 240) {
-          // Whisper transcription: slow climb from ~90 toward 95
-          progress = Math.min(
-            90 + 5 * (1 - Math.exp(-((seconds - 20) / 120))),
-            95
-          );
-          statusText = "Transcribing with Whisper...";
-        } else if (seconds < 360) {
-          progress = Math.min(
-            95 + 3 * (1 - Math.exp(-((seconds - 240) / 60))),
-            98
-          );
-          statusText = "Identifying speakers...";
-        } else {
-          progress = Math.min(90 + (seconds - 360) * 0.01, 95);
-          statusText = "Almost done... Processing a long video.";
-        }
-
-        updateQueue((prev) =>
-          prev.map((item, i) =>
-            i === idx ? { ...item, progress, statusText } : item
-          )
-        );
-      }, tick);
-
-      progressIntervals.current.set(idx, interval);
-    },
-    [updateQueue]
-  );
-
-  const stopProgressForItem = useCallback((idx: number) => {
-    const interval = progressIntervals.current.get(idx);
-    if (interval) {
-      clearInterval(interval);
-      progressIntervals.current.delete(idx);
-    }
-  }, []);
-
-  const processNext = useCallback(async () => {
-    if (processingRef.current) return;
-    processingRef.current = true;
-
-    while (true) {
-      const idx = queueRef.current.findIndex(
-        (item) => item.status === "pending"
-      );
-      if (idx < 0) break;
-
-      const itemUrl = queueRef.current[idx].url;
-      updateQueue((prev) =>
-        prev.map((item, i) =>
-          i === idx
-            ? {
-                ...item,
-                status: "processing",
-                progress: 0,
-                statusText: "Checking for YouTube captions...",
-                startedAt: Date.now(),
-              }
-            : item
-        )
-      );
-      startProgressForItem(idx);
-
-      // Quick title fetch via oEmbed (non-blocking — don't fail if this errors)
-      try {
-        const oembedRes = await fetch(
-          `https://www.youtube.com/oembed?url=${encodeURIComponent(itemUrl)}&format=json`
-        );
-        if (oembedRes.ok) {
-          const oembed = await oembedRes.json();
-          if (oembed.title) {
-            updateQueue((prev) =>
-              prev.map((item, i) =>
-                i === idx ? { ...item, title: oembed.title } : item
-              )
-            );
-          }
-        }
-      } catch {
-        // Ignore — title is optional, we'll get it from the transcript API response
-      }
-
-      try {
-        const res = await fetch("/api/transcripts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: itemUrl }),
-        });
-        const data = await res.json();
-
-        stopProgressForItem(idx);
-
-        if (res.ok) {
-          // Mark that user has created at least one transcript
-          localStorage.setItem("hasCreatedTranscript", "true");
-          setHasCreatedTranscript(true);
-
-          if (data?.duplicate) {
-            // Already transcribed — remove from queue, switch to list view,
-            // select the existing item, and show hint below the input.
-            updateQueue((prev) => prev.filter((_, i) => i !== idx));
-            setSearch("");
-            await fetchTranscripts("");
-            // Set layout + selection in a single router.push to avoid race conditions
-            if (data?.id) {
-              localStorage.setItem("libraryLayout", "list");
-              setClosingVideo(null);
-              const params = new URLSearchParams(searchParams.toString());
-              params.set("layout", "list");
-              params.set("id", data.id);
-              router.push(`/?${params.toString()}`, { scroll: false });
-            }
-            setDuplicateHint({ message: "This video has already been transcribed.", id: data.id });
-            setTimeout(() => setDuplicateHint(null), 6000);
-            processingRef.current = false;
-            return;
-          }
-
-          // Update library and clear search so the new video is visible.
-          setSearch("");
-          const startedAt = queueRef.current[idx]?.startedAt;
-          const elapsedMs = startedAt ? Date.now() - startedAt : 0;
-          const shouldAutoOpenTranscript = elapsedMs > 0 && elapsedMs <= 5000;
-
-          if (data?.id && shouldAutoOpenTranscript) {
-            localStorage.setItem("libraryLayout", "list");
-            setClosingVideo(null);
-            const params = new URLSearchParams(searchParams.toString());
-            params.set("layout", "list");
-            params.set("id", data.id);
-            router.push(`/?${params.toString()}`, { scroll: false });
-          } else {
-            localStorage.setItem("libraryLayout", "list");
-            const params = new URLSearchParams(searchParams.toString());
-            params.set("layout", "list");
-            params.delete("id");
-            router.push(`/?${params.toString()}`, { scroll: false });
-            setToast("Transcript finished. Use ✨ to summarize.");
-            setTimeout(() => setToast(null), 4000);
-          }
-          fetchTranscripts("");
-          void notifyTranscriptReady(data?.title);
-
-          // Show a brief tick on the new transcript in the list
-          if (data?.id) {
-            setJustCompletedIds((prev) => new Set(prev).add(data.id));
-            setTimeout(() => {
-              setJustCompletedIds((prev) => {
-                const next = new Set(prev);
-                next.delete(data.id);
-                return next;
-              });
-            }, 3000);
-          }
-
-          // Animate progress bar to 100% while still showing it
-          updateQueue((prev) =>
-            prev.map((item, i) =>
-              i === idx
-                ? { ...item, progress: 100, statusText: "Done!" }
-                : item
-            )
-          );
-
-          // Let the 100% animation play, then mark completed
-          await new Promise((r) => setTimeout(r, 900));
-          updateQueue((prev) =>
-            prev.map((item, i) =>
-              i === idx
-                ? {
-                    ...item,
-                    status: "completed",
-                    title: data.title,
-                    id: data.id,
-                    progress: 100,
-                    statusText: "",
-                  }
-                : item
-            )
-          );
-
-          // Remove completed item from queue after the CSS fade-out animation finishes
-          setTimeout(() => {
-            updateQueue((prev) => prev.filter((_, i) => i !== idx));
-          }, 2800);
-        } else {
-          let errorMsg = data.error || "Failed";
-          if (res.status === 429) {
-            errorMsg =
-              "YouTube is temporarily limiting requests. Please wait a minute and try again.";
-          } else if (res.status === 403) {
-            errorMsg =
-              "YouTube is blocking requests from your current network. Try disabling your VPN.";
-          }
-          updateQueue((prev) =>
-            prev.map((item, i) =>
-              i === idx
-                ? {
-                    ...item,
-                    status: "failed",
-                    error: errorMsg,
-                    progress: 0,
-                    statusText: "",
-                  }
-                : item
-            )
-          );
-        }
-      } catch {
-        stopProgressForItem(idx);
-        updateQueue((prev) =>
-          prev.map((item, i) =>
-            i === idx
-              ? {
-                  ...item,
-                  status: "failed",
-                  error: "Network error",
-                  progress: 0,
-                  statusText: "",
-                }
-              : item
-          )
-        );
-      }
-    }
-
-    processingRef.current = false;
-  }, [
-    updateQueue,
-    startProgressForItem,
-    stopProgressForItem,
-    fetchTranscripts,
-    notifyTranscriptReady,
-    router,
-    searchParams,
-  ]);
-
-  function addToQueue(urls: string[]) {
-    resetTabNotification();
-
-    const newItems: QueueItem[] = urls.map((u) => ({
-      url: u,
-      status: "pending" as const,
-      progress: 0,
-      statusText: "",
-    }));
-
-    // Update ref synchronously so processNext can see new items immediately
-    queueRef.current = [...queueRef.current, ...newItems];
-    setQueue([...queueRef.current]);
-
-    if (!processingRef.current) {
-      processNext();
-    }
-  }
-
-  function retryItem(index: number) {
-    // Update ref synchronously so processNext can see the reset item immediately
-    queueRef.current = queueRef.current.map((item, i) =>
-      i === index
-        ? { ...item, status: "pending" as const, error: undefined, progress: 0, statusText: "" }
-        : item
-    );
-    setQueue([...queueRef.current]);
-
-    if (!processingRef.current) {
-      processNext();
-    }
-  }
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    const trimmed = url.trim();
-    if (!trimmed) {
-      setError("Please enter a URL.");
-      return;
-    }
-
-    if (!isSupportedUrl(trimmed)) {
-      setError("Please enter a valid video URL.");
-      return;
-    }
-
-    addToQueue([trimmed]);
-    setUrl("");
-  }
-
-  const isProcessing = queue.some((q) => q.status === "processing");
-  const completedCount = queue.filter((q) => q.status === "completed").length;
-  const totalCount = queue.length;
-  const hasQueue = queue.length > 0;
-
-  const segments: TranscriptSegment[] =
-    video?.transcript ? JSON.parse(video.transcript) : [];
-
+function FolderIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
-    <div className="mx-auto max-w-7xl px-4 py-12">
-      <div className="mx-auto max-w-[800px]">
-        <div className="space-y-10">
-          <section>
-            <div className="mb-8">
-              <p className="anim-fade-up text-[11px] font-medium uppercase tracking-[0.12em] text-white/25">
-                Transcriber
-              </p>
-              <h1 className="anim-fade-up-d1 mt-3 text-[22px] font-semibold tracking-tight text-white/90">
-                Paste a link. Get the transcript.
-              </h1>
-              {!hasCreatedTranscript && (
-                <p className="anim-fade-up-d2 mt-3 text-sm text-white/30">
-                  Local transcription powered by Whisper. No data leaves your machine.
-                </p>
-              )}
-            </div>
-
-            <div className="anim-fade-up-d2 relative">
-              {/* Ambient glow behind input */}
-              {!url && !hasQueue && (
-                <div
-                  className="pointer-events-none absolute -top-16 left-1/2 h-[240px] w-[500px] -translate-x-1/2 rounded-full opacity-[0.035]"
-                  style={{ background: "radial-gradient(ellipse, rgba(255,255,255,1) 0%, transparent 70%)", animation: "subtleGlow 6s ease-in-out infinite" }}
-                />
-              )}
-            <form onSubmit={handleSubmit} className="relative w-full">
-              <div className="flex items-center gap-3">
-                <div className="relative flex-1">
-                  <Input
-                    type="text"
-                    value={url}
-                    onChange={(e) => {
-                      setUrl(e.target.value);
-                      if (error) setError(null);
-                      if (duplicateHint) setDuplicateHint(null);
-                    }}
-                    placeholder="Paste a video URL"
-                    className="h-12 pr-10"
-                  />
-                  {url && (
-                    <IconButton
-                      size="sm"
-                      onClick={() => {
-                        setUrl("");
-                        setError(null);
-                      }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2"
-                      title="Clear"
-                    >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 20 20"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M6 6l8 8M14 6l-8 8" />
-                      </svg>
-                    </IconButton>
-                  )}
-                </div>
-                {url.trim() && (
-                  <button
-                    type="submit"
-                    className="shrink-0 rounded-full px-6 py-3 text-sm font-semibold text-black/90 transition-all duration-150 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:opacity-50 disabled:pointer-events-none"
-                    style={{ backgroundColor: "#a0a0a0" }}
-                  >
-                    {isProcessing ? "Add" : "Transcribe"}
-                  </button>
-                )}
-              </div>
-            </form>
-            </div>
-
-            {error && <p className="mt-3 text-sm text-red-400/90">{error}</p>}
-            {duplicateHint && (
-              <p className="mt-3 flex items-center gap-1.5 text-sm text-white/50">
-                <span>{duplicateHint.message}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const el = document.querySelector(`[data-transcript-id="${duplicateHint.id}"]`);
-                    el?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }}
-                  className="inline-flex items-center rounded-md p-0.5 text-white/40 transition-colors hover:text-white/70"
-                  title="Scroll to transcript"
-                >
-                  <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M10 4v12M5 11l5 5 5-5" />
-                  </svg>
-                </button>
-              </p>
-            )}
-
-            {/* Queue list */}
-            {hasQueue && (
-              <div className="mt-8">
-                <div className="mb-4 flex items-center justify-between">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-white/25">
-                    {completedCount}/{totalCount} completed
-                  </p>
-                  <div className="flex items-center gap-2">
-                    {!isProcessing && (
-                      <Button
-                        onClick={() => {
-                          setQueue([]);
-                          queueRef.current = [];
-                        }}
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs text-white/30 hover:text-white/60"
-                      >
-                        Clear
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                <AnimatePresence mode="popLayout">
-                  {queue.map((item, idx) => (
-                    <motion.div
-                      key={item.url + idx}
-                      layout
-                      initial={{ opacity: 0, y: -12, scale: 0.97 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -8, scale: 0.95, height: 0, marginBottom: 0 }}
-                      transition={{
-                        layout: { type: "spring", stiffness: 400, damping: 30 },
-                        opacity: { duration: 0.25 },
-                        y: { type: "spring", stiffness: 300, damping: 25 },
-                        scale: { type: "spring", stiffness: 400, damping: 28 },
-                        height: { type: "spring", stiffness: 300, damping: 30, delay: 0.1 },
-                      }}
-                      role="button"
-                      tabIndex={item.status === "completed" ? 0 : -1}
-                      onClick={() => {
-                        if (item.status === "completed" && item.id) {
-                          selectTranscript(item.id);
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          if (item.status === "completed" && item.id) {
-                            selectTranscript(item.id);
-                          }
-                        }
-                      }}
-                      className={`group/queue relative w-full overflow-hidden rounded-2xl border px-5 py-4 mb-3 text-left ${
-                        item.status === "completed"
-                          ? "cursor-pointer border-white/10 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]"
-                          : item.status === "failed"
-                          ? "cursor-default border-red-500/10 bg-red-500/[0.03]"
-                          : item.status === "processing"
-                          ? "cursor-default border-white/10 bg-white/[0.02]"
-                          : "cursor-default border-white/6 bg-white/[0.015]"
-                      }`}
-                    >
-                      {/* Processing pulse ring */}
-                      {item.status === "processing" && (
-                        <div className="pointer-events-none absolute -left-4 -top-4 h-12 w-12 rounded-full border border-white/10" style={{ animation: "pulseRing 2s ease-in-out infinite" }} />
-                      )}
-                      <div className="flex items-center gap-4">
-                        {/* Status indicator */}
-                        <div className="shrink-0">
-                          {item.status === "pending" && (
-                            <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-white/20" />
-                          )}
-                          {item.status === "processing" && (
-                            <span className="inline-block h-2.5 w-2.5 rounded-full bg-white/50 shadow-[0_0_8px_rgba(255,255,255,0.2)]" />
-                          )}
-                          {item.status === "completed" && (
-                            <svg className="h-4 w-4 text-white/50" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L7 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
-                          )}
-                          {item.status === "failed" && (
-                            <svg className="h-4 w-4 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                            </svg>
-                          )}
-                        </div>
-
-                        {/* Content */}
-                        <div className="min-w-0 flex-1">
-                          {item.title ? (
-                            <p className="truncate text-sm font-medium text-white/80">
-                              {item.title}
-                            </p>
-                          ) : (
-                            <p className="truncate text-sm text-white/40">
-                              {item.url}
-                            </p>
-                          )}
-                          {item.title && (
-                            <p className="mt-0.5 truncate text-xs text-white/25">
-                              {item.url}
-                            </p>
-                          )}
-                          {item.status === "pending" && (
-                            <p className="mt-1 text-xs text-white/25">Queued</p>
-                          )}
-                          {item.status === "failed" && item.error && (
-                            <div className="mt-2 flex items-start justify-between gap-2">
-                              <p className="text-sm text-red-400/80">
-                                {item.error}
-                              </p>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  retryItem(idx);
-                                }}
-                                className="shrink-0 whitespace-nowrap rounded-lg border border-white/10 px-4 py-1.5 text-xs text-white/50 transition-all hover:border-white/20 hover:bg-white/5 hover:text-white/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
-                              >
-                                Retry
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Progress bar for processing item */}
-                      {item.status === "processing" && (
-                        <div className="mt-4">
-                          <div className="mb-2 flex items-center justify-between">
-                            {item.statusText && (
-                              <p className="text-[11px] uppercase tracking-wider text-white/35">
-                                {item.statusText}
-                              </p>
-                            )}
-                            <span className="font-mono text-[11px] font-medium tabular-nums text-white/45">
-                              {Math.round(item.progress)}%
-                            </span>
-                          </div>
-                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
-                            <div
-                              className="h-full rounded-full transition-all duration-700 ease-out"
-                              style={{
-                                width: `${item.progress}%`,
-                                background: "linear-gradient(90deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.4) 100%)",
-                              }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </div>
-            )}
-          </section>
-
-          {hasCreatedTranscript && (
-            <section className="anim-fade-up-d3">
-              <div className="mb-5 flex items-center justify-between">
-                <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-white/25">
-                  Library
-                </p>
-                <div className="flex items-center gap-1">
-                  <IconButton
-                    onClick={() => setLibraryLayout("tiles")}
-                    className={`h-8 w-8 shrink-0 rounded-lg ${libraryLayout === "tiles" ? "bg-white/10 text-white/70" : "text-white/25"}`}
-                    title="Tiles view"
-                  >
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="3" width="7" height="7" rx="1.2" />
-                      <rect x="14" y="3" width="7" height="7" rx="1.2" />
-                      <rect x="3" y="14" width="7" height="7" rx="1.2" />
-                      <rect x="14" y="14" width="7" height="7" rx="1.2" />
-                    </svg>
-                  </IconButton>
-                  <IconButton
-                    onClick={() => setLibraryLayout("list")}
-                    className={`h-8 w-8 shrink-0 rounded-lg ${libraryLayout === "list" ? "bg-white/10 text-white/70" : "text-white/25"}`}
-                    title="List view"
-                  >
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M4 7h16M4 12h16M4 17h16" />
-                    </svg>
-                  </IconButton>
-                </div>
-              </div>
-              <div className="mb-5">
-                <Input
-                  type="text"
-                  placeholder="Search by title or author..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-
-              {libraryLoading ? (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div
-                      key={i}
-                      className="overflow-hidden rounded-2xl border border-white/[0.04] bg-white/[0.02]"
-                    >
-                      <div className="h-28 bg-white/[0.03]" style={{ backgroundImage: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.03) 50%, transparent 100%)", backgroundSize: "200% 100%", animation: "shimmer 1.8s infinite" }} />
-                      <div className="p-4">
-                        <div className="mb-2.5 h-4 w-4/5 rounded-md bg-white/[0.04]" />
-                        <div className="h-3 w-1/2 rounded-md bg-white/[0.03]" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : transcripts.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-white/[0.06] py-20 text-center">
-                  {search ? (
-                    <p className="text-sm text-white/30">No transcripts match &ldquo;{search}&rdquo;</p>
-                  ) : (
-                    <>
-                      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.03]">
-                        <svg className="h-5 w-5 text-white/15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                        </svg>
-                      </div>
-                      <p className="text-sm text-white/35">Your transcripts will appear here</p>
-                      <p className="mt-1.5 text-xs text-white/18">Paste a video URL above to get started</p>
-                    </>
-                  )}
-                </div>
-              ) : (
-                <>
-                  {libraryLayout === "tiles" ? (
-                    <div className="grid grid-cols-2 gap-4">
-                      {transcripts.map((t) => {
-                        const isSelected = selectedId === t.id;
-
-                        return (
-                          <a
-                            key={t.id}
-                            data-transcript-id={t.id}
-                            href={t.videoUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={`group relative w-full overflow-hidden rounded-2xl border text-left transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 ${
-                              isSelected
-                                ? "border-white/15 bg-white/[0.04] shadow-[0_4px_24px_-8px_rgba(0,0,0,0.5)]"
-                                : "border-white/[0.05] hover:border-white/10 hover:-translate-y-1 hover:shadow-[0_12px_40px_-16px_rgba(0,0,0,0.5)]"
-                            }`}
-                            title={t.title}
-                          >
-                            <div className="relative">
-                              {t.thumbnailUrl ? (
-                                <img
-                                  src={t.thumbnailUrl}
-                                  alt={t.title}
-                                  className="h-28 w-full object-cover opacity-40 sepia saturate-50 brightness-110 transition-all duration-300 group-hover:opacity-50"
-                                />
-                              ) : (
-                                <div className="flex h-28 items-center justify-center bg-white/[0.03] text-sm text-white/15">
-                                  No thumbnail
-                                </div>
-                              )}
-                              {/* Gradient overlay on thumbnail */}
-                              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[hsl(var(--bg))] via-transparent to-transparent opacity-80" />
-                            </div>
-                            <div className="p-3.5">
-                              <p className="line-clamp-2 text-[13px] font-medium leading-snug text-white/75 group-hover:text-white/90">
-                                {t.title}
-                              </p>
-                              <p className="mt-1.5 truncate text-[11px] text-white/30">
-                                {t.author}
-                              </p>
-                            </div>
-                          </a>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <LayoutGroup>
-                      <div className="overflow-hidden rounded-2xl border border-white/[0.06]">
-                      {transcripts.map((t) => {
-                        const isSelected = selectedId === t.id;
-                        const isClosing = closingVideo?.id === t.id;
-                        const showDrawer = isSelected || isClosing;
-                        // Use closingVideo if available (during exit animation), otherwise use current video
-                        const videoData = closingVideo || video;
-                        const transcriptSegments: TranscriptSegment[] =
-                          showDrawer && videoData?.transcript && videoData.id === t.id
-                            ? JSON.parse(videoData.transcript)
-                            : [];
-
-                        return (
-                          <motion.div
-                            key={t.id}
-                            data-transcript-id={t.id}
-                            layout
-                            transition={{
-                              layout: {
-                                type: "spring",
-                                stiffness: motionTuning.rowStiffness,
-                                damping: motionTuning.rowDamping,
-                                mass: motionTuning.rowMass,
-                              },
-                            }}
-                            onLayoutAnimationStart={() => {
-                              addDebugEvent("list.row.layout.start", `id=${t.id}`);
-                            }}
-                            onLayoutAnimationComplete={() => {
-                              addDebugEvent("list.row.layout.complete", `id=${t.id}`);
-                            }}
-                          >
-                            <div
-                              className={`group/row relative flex w-full items-center gap-4 px-5 py-3.5 transition-all duration-200 ${
-                                isSelected
-                                  ? "bg-white/[0.06] shadow-[inset_2px_0_0_0_rgba(255,255,255,0.25)]"
-                                  : "hover:bg-white/[0.03]"
-                              }`}
-                            >
-                              <AnimatePresence>
-                              {justCompletedIds.has(t.id) && (
-                                <motion.span
-                                  initial={{ opacity: 0, scale: 0.3 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  exit={{ opacity: 0, scale: 0.6 }}
-                                  transition={{
-                                    scale: { type: "spring", stiffness: 500, damping: 20 },
-                                    opacity: { duration: 0.3 },
-                                  }}
-                                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/8 text-white/50"
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L7 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                  </svg>
-                                </motion.span>
-                              )}
-                              </AnimatePresence>
-                              <button
-                                onClick={() => selectTranscript(t.id)}
-                                className="min-w-0 flex-1 text-left"
-                              >
-                                <p className="truncate text-base font-medium text-white/75">
-                                  {t.title}
-                                </p>
-                                <p className="mt-1 truncate text-sm text-white/40">
-                                  {t.author} · {formatDate(t.createdAt)}
-                                  {t.source ? ` · ${t.source}` : ""}
-                                </p>
-                              </button>
-
-                              <div className="flex shrink-0 items-center gap-2 opacity-0 transition-opacity group-hover/row:opacity-100">
-                                <LlmLauncher
-                                  videoId={t.id}
-                                  videoTitle={t.title}
-                                  onToast={(msg) => {
-                                    setToast(msg);
-                                    setTimeout(() => setToast(null), 2500);
-                                  }}
-                                />
-                                <a
-                                  href={`/api/transcripts/${t.id}/download`}
-                                  title="Download as Markdown"
-                                  className={`${iconButtonClassName("sm")} group/dl`}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <svg
-                                    className="transition-transform duration-300 group-hover/dl:translate-y-0.5"
-                                    width="16"
-                                    height="16"
-                                    viewBox="0 0 20 20"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.75"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  >
-                                    <path d="M10 3v10m0 0l-3.5-3.5M10 13l3.5-3.5" />
-                                    <path d="M3 15v1a1 1 0 001 1h12a1 1 0 001-1v-1" />
-                                  </svg>
-                                </a>
-                                <button
-                                  type="button"
-                                  title={copiedId === t.id ? "Copied!" : "Copy transcript"}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleCopyFromLibrary(t.id);
-                                  }}
-                                  className={`${iconButtonClassName("sm")} group/cp`}
-                                >
-                                  {copiedId === t.id ? (
-                                    <svg
-                                      className="transition-transform duration-300"
-                                      width="16"
-                                      height="16"
-                                      viewBox="0 0 20 20"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="1.75"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    >
-                                      <path d="M5 10.5l3 3 7-7" />
-                                    </svg>
-                                  ) : (
-                                    <svg
-                                      className="transition-transform duration-300"
-                                      width="16"
-                                      height="16"
-                                      viewBox="0 0 20 20"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="1.75"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    >
-                                      <rect x="7" y="7" width="9" height="9" rx="1" />
-                                      <path d="M4 13V4a1 1 0 011-1h9" />
-                                    </svg>
-                                  )}
-                                </button>
-                                <button
-                                  type="button"
-                                  title="Delete"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setDeleteId(t.id);
-                                  }}
-                                  className={`${iconButtonClassName("sm")} group/del hover:bg-red-500/15 hover:text-red-200`}
-                                >
-                                  <svg
-                                    className="transition-transform duration-300 group-hover/del:-rotate-6"
-                                    width="16"
-                                    height="16"
-                                    viewBox="0 0 20 20"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.75"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  >
-                                    <path d="M4 5h12M8 5V3.5a1 1 0 011-1h2a1 1 0 011 1V5m2 0v10.5a1.5 1.5 0 01-1.5 1.5h-5A1.5 1.5 0 016 15.5V5" />
-                                    <path d="M9 9v5M11 9v5" />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Transcript drawer */}
-                            {showDrawer && (
-                              <motion.div
-                                key={`list-drawer-${t.id}`}
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{
-                                  opacity: isSelected ? 1 : 0,
-                                  height: isSelected ? "auto" : 0,
-                                }}
-                                onAnimationStart={() => {
-                                  addDebugEvent(
-                                    "list.drawer.anim.start",
-                                    `id=${t.id} selected=${isSelected} closing=${isClosing}`
-                                  );
-                                }}
-                                onLayoutAnimationStart={() => {
-                                  addDebugEvent("list.drawer.layout.start", `id=${t.id}`);
-                                }}
-                                onLayoutAnimationComplete={() => {
-                                  addDebugEvent("list.drawer.layout.complete", `id=${t.id}`);
-                                }}
-                                transition={{
-                                  height: {
-                                    type: "spring",
-                                    stiffness: isSelected ? motionTuning.drawerOpen.stiffness : motionTuning.drawerClose.stiffness,
-                                    damping: isSelected ? motionTuning.drawerOpen.damping : motionTuning.drawerClose.damping,
-                                    mass: isSelected ? motionTuning.drawerOpen.mass : motionTuning.drawerClose.mass,
-                                  },
-                                  opacity: {
-                                    duration: isSelected ? motionTuning.drawerOpen.opacityDuration : motionTuning.drawerClose.opacityDuration,
-                                    ease: isSelected ? motionTuning.drawerOpen.ease : motionTuning.drawerClose.ease,
-                                  },
-                                }}
-                                onAnimationComplete={() => {
-                                  addDebugEvent(
-                                    "list.drawer.anim.complete",
-                                    `id=${t.id} selected=${isSelected} closing=${isClosing}`
-                                  );
-                                  if (!isSelected) {
-                                    setClosingVideo((prev) => (prev?.id === t.id ? null : prev));
-                                  }
-                                }}
-                                className="overflow-hidden"
-                              >
-                                <div className="border-t border-white/[0.06] bg-white/[0.02] px-6 py-6">
-                                  {videoLoading ? (
-                                    <div className="flex items-center justify-center py-8">
-                                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/15 border-t-white/50" />
-                                    </div>
-                                  ) : videoError ? (
-                                    <p className="py-4 text-center text-sm text-red-500">
-                                      {videoError}
-                                    </p>
-                                  ) : transcriptSegments.length > 0 ? (
-                                    <div className="space-y-4">
-                                      {mergeSegments(transcriptSegments).map((block, idx, blocks) => {
-                                        const showSpeaker = block.speaker && (
-                                          idx === 0 || blocks[idx - 1]?.speaker !== block.speaker
-                                        );
-                                        return (
-                                          <div key={idx}>
-                                            {showSpeaker && (
-                                              <p className="mb-1 text-xs font-medium text-white/50">
-                                                {block.speaker}
-                                              </p>
-                                            )}
-                                            <div className="flex items-baseline gap-3">
-                                              <span className="w-10 shrink-0 text-right font-mono text-xs leading-relaxed text-white/35">
-                                                {formatTimestamp(block.startMs)}
-                                              </span>
-                                              <p className="text-sm leading-relaxed text-white/70">
-                                                {block.text}
-                                              </p>
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : (
-                                    <p className="py-4 text-center text-sm text-white/50">
-                                      No transcript available
-                                    </p>
-                                  )}
-                                </div>
-                              </motion.div>
-                            )}
-                          </motion.div>
-                        );
-                      })}
-                      </div>
-                    </LayoutGroup>
-                  )}
-                </>
-              )}
-
-              {/* Footer */}
-              <div className="anim-fade-in-d2 mt-12 flex items-center justify-center gap-6 text-[11px] text-white/15">
-                <a
-                  href="/settings"
-                  className="flex items-center gap-1.5 transition-colors duration-200 hover:text-white/40"
-                  title="Settings"
-                >
-                  <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path fillRule="evenodd" d="M11.078 2.25c-.917 0-1.699.663-1.85 1.567L9.05 4.889c-.02.12-.115.26-.297.348a7.454 7.454 0 0 0-.986.57c-.166.115-.334.126-.45.083L6.3 5.508a1.875 1.875 0 0 0-2.282.819l-.922 1.597a1.875 1.875 0 0 0 .432 2.385l.84.692c.095.078.17.229.154.43a7.598 7.598 0 0 0 0 1.139c.015.2-.059.352-.153.43l-.841.692a1.875 1.875 0 0 0-.432 2.385l.922 1.597a1.875 1.875 0 0 0 2.282.818l1.019-.382c.115-.043.283-.031.45.082.312.214.641.405.985.57.182.088.277.228.297.35l.178 1.071c.151.904.933 1.567 1.85 1.567h1.844c.916 0 1.699-.663 1.85-1.567l.178-1.072c.02-.12.114-.26.297-.349.344-.165.673-.356.985-.57.167-.114.335-.125.45-.082l1.02.382a1.875 1.875 0 0 0 2.28-.819l.923-1.597a1.875 1.875 0 0 0-.432-2.385l-.84-.692c-.095-.078-.17-.229-.154-.43a7.614 7.614 0 0 0 0-1.139c-.016-.2.059-.352.153-.43l.84-.692c.708-.582.891-1.59.433-2.385l-.922-1.597a1.875 1.875 0 0 0-2.282-.818l-1.02.382c-.114.043-.282.031-.449-.083a7.49 7.49 0 0 0-.985-.57c-.183-.087-.277-.227-.297-.348l-.179-1.072a1.875 1.875 0 0 0-1.85-1.567h-1.843ZM12 15.75a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5Z" clipRule="evenodd" />
-                  </svg>
-                  Settings
-                </a>
-                <span className="h-3 w-px bg-white/8" />
-                <a
-                  href="https://waitlist-site-alpha.vercel.app"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="transition-colors duration-200 hover:text-white/40"
-                >
-                  Cloud waitlist
-                </a>
-                <span className="h-3 w-px bg-white/8" />
-                <a
-                  href="https://github.com/lifesized/youtube-transcriber"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="transition-colors duration-200 hover:text-white/40"
-                  title="GitHub"
-                >
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
-                  </svg>
-                </a>
-              </div>
-            </section>
-          )}
-        </div>
-      </div>
-
-      {/* Toast notification */}
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-white/10 bg-[hsl(var(--panel))]/95 px-5 py-3 text-sm text-white/75 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)] backdrop-blur-xl">
-          {toast}
-        </div>
-      )}
-
-      {process.env.NODE_ENV === "development" && (
-        <AnimationTuner tuning={motionTuning} onChange={setMotionTuning} />
-      )}
-
-      {/* Delete confirmation dialog */}
-      {deleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-sm rounded-2xl border border-white/8 bg-[hsl(var(--panel))]/95 p-8 shadow-[0_30px_120px_-40px_rgba(0,0,0,0.95)] backdrop-blur-xl">
-            <h2 className="mb-2 text-lg font-semibold text-white/90">Delete transcript?</h2>
-            <p className="mb-6 text-sm leading-relaxed text-white/45">
-              This action cannot be undone. The transcript will be permanently removed.
-            </p>
-            <div className="flex justify-end gap-4">
-              <Button
-                onClick={() => setDeleteId(null)}
-                disabled={deleting}
-                variant="secondary"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={async () => {
-                  setDeleting(true);
-                  try {
-                    const res = await fetch(`/api/transcripts/${deleteId}`, {
-                      method: "DELETE",
-                    });
-                    if (res.ok) {
-                      setTranscripts((prev) =>
-                        prev.filter((t) => t.id !== deleteId)
-                      );
-                      if (selectedId === deleteId) {
-                        clearSelectedTranscript();
-                      }
-                      setDeleteId(null);
-                    }
-                  } finally {
-                    setDeleting(false);
-                  }
-                }}
-                disabled={deleting}
-                variant="destructive"
-              >
-                {deleting ? "Deleting..." : "Delete"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      aria-hidden="true"
+    >
+      <path d="M3.75 6.75h5l1.5 2h10v8.5a2 2 0 0 1-2 2H5.75a2 2 0 0 1-2-2V6.75Z" />
+      <path d="M3.75 8.75h16.5" />
+    </svg>
   );
+}
+
+function FileIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      aria-hidden="true"
+    >
+      <path d="M6.75 3.75h7l3.5 3.5v13H6.75v-16.5Z" />
+      <path d="M13.75 3.75v4h3.5M9 12h6M9 15.5h6" />
+    </svg>
+  );
+}
+
+function StatusMark({ state }: { state: ExportItemState }) {
+  if (state === "processing") {
+    return (
+      <span
+        className="mt-1.5 h-2 w-2 shrink-0 animate-pulse rounded-full bg-[hsl(var(--accent))]"
+        aria-hidden="true"
+      />
+    );
+  }
+  if (state === "failed") {
+    return (
+      <span
+        className="mt-1.5 flex h-3 w-3 shrink-0 items-center justify-center text-[10px] font-semibold text-red-300"
+        aria-hidden="true"
+      >
+        ×
+      </span>
+    );
+  }
+  return (
+    <svg
+      className="mt-1 h-3.5 w-3.5 shrink-0 text-[hsl(var(--muted-2))]"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      aria-hidden="true"
+    >
+      {state === "saved" ? (
+        <path d="m3.25 8.25 3 3 6.5-7" />
+      ) : (
+        <path d="M3 8h10" />
+      )}
+    </svg>
+  );
+}
+
+function itemLabel(state: ExportItemState): string {
+  switch (state) {
+    case "processing":
+      return "In progress";
+    case "saved":
+      return "Saved";
+    case "skipped":
+      return "Already present";
+    case "failed":
+      return "Failed";
+    default:
+      return "Queued";
+  }
 }
 
 export default function Home() {
-  return (
-    <Suspense
-      fallback={
-        <div className="mx-auto flex min-h-[calc(100vh-57px)] max-w-7xl items-center justify-center px-4">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-white/15 border-t-white/50" />
-        </div>
+  const [url, setUrl] = useState("");
+  const [job, setJob] = useState<ExportJob | null>(null);
+  const [outputRoot, setOutputRoot] = useState(
+    "~/Desktop/AI Trading/Youtube_Transcript",
+  );
+  const [health, setHealth] = useState<HealthState>("checking");
+  const [submitting, setSubmitting] = useState(false);
+  const [openingFolder, setOpeningFolder] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshJob = useCallback(async () => {
+    try {
+      const response = await fetch("/api/export", { cache: "no-store" });
+      if (!response.ok) throw new Error("Local export service is unavailable.");
+      const data = (await response.json()) as {
+        job: ExportJob | null;
+        outputRoot: string;
+      };
+      setJob(data.job);
+      setOutputRoot(data.outputRoot);
+      setHealth("ready");
+    } catch {
+      setHealth("unavailable");
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshJob();
+    const timer = window.setInterval(() => void refreshJob(), 1500);
+    return () => window.clearInterval(timer);
+  }, [refreshJob]);
+
+  const isRunning = job?.phase === "discovering" || job?.phase === "running";
+  const visibleItems = useMemo(
+    () =>
+      (job?.items ?? [])
+        .filter((item) => item.state !== "queued")
+        .slice(-7)
+        .reverse(),
+    [job?.items],
+  );
+  const compactOutputRoot = outputRoot.replace(/^\/Users\/[^/]+/, "~");
+
+  async function startExport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!url.trim() || submitting || isRunning || health !== "ready") return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = (await response.json()) as {
+        job?: ExportJob;
+        error?: string;
+      };
+      if (!response.ok || !data.job) {
+        throw new Error(data.error || "Could not start the export.");
       }
-    >
-      <HomeInner />
-    </Suspense>
+      setJob(data.job);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not start the export.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function stopExport() {
+    setError(null);
+    try {
+      const response = await fetch("/api/export", { method: "DELETE" });
+      const data = (await response.json()) as { job: ExportJob | null };
+      setJob(data.job);
+    } catch {
+      setError(
+        "Could not stop the export. It may still finish the current video.",
+      );
+    }
+  }
+
+  async function openFolder() {
+    setOpeningFolder(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/export/open", { method: "POST" });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok)
+        throw new Error(data.error || "Could not open the folder.");
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not open the folder.",
+      );
+    } finally {
+      setOpeningFolder(false);
+    }
+  }
+
+  const primaryButtonCopy =
+    health === "checking"
+      ? "Checking local service…"
+      : health === "unavailable"
+        ? "Local service unavailable"
+        : submitting
+          ? "Starting export…"
+          : isRunning
+            ? "Export in progress"
+            : job?.phase === "completed"
+              ? "Start another export"
+              : "Start export";
+
+  return (
+    <main className="min-h-screen overflow-x-hidden px-4 py-8 sm:px-6 sm:py-12">
+      <div className="mx-auto w-full min-w-0 max-w-3xl">
+        <header className="mb-10 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[hsl(var(--panel))] text-[hsl(var(--muted))] shadow-[var(--edge)]">
+              <FileIcon className="h-4.5 w-4.5" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-[hsl(var(--text))]">
+                Transcript Desk
+              </p>
+              <p className="text-xs text-[hsl(var(--muted-2))]">
+                Local YouTube research files
+              </p>
+            </div>
+          </div>
+          <div
+            className="flex items-center gap-2 text-xs text-[hsl(var(--muted-2))]"
+            aria-live="polite"
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                health === "ready"
+                  ? "bg-[hsl(var(--accent))]"
+                  : health === "unavailable"
+                    ? "bg-red-300"
+                    : "animate-pulse bg-[hsl(var(--muted-2))]"
+              }`}
+              aria-hidden="true"
+            />
+            {health === "ready"
+              ? "Ready"
+              : health === "unavailable"
+                ? "Unavailable"
+                : "Checking"}
+          </div>
+        </header>
+
+        <section aria-labelledby="page-title" className="mb-8">
+          <h1
+            id="page-title"
+            className="max-w-xl text-2xl font-semibold tracking-[-0.02em] text-[hsl(var(--text))]"
+          >
+            Turn YouTube research into local Markdown.
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[hsl(var(--muted))]">
+            Paste one video or an entire channel. Completed transcripts are
+            organized by channel and saved directly to your Desktop.
+          </p>
+        </section>
+
+        <form
+          onSubmit={startExport}
+          className="w-full min-w-0 max-w-full overflow-hidden rounded-xl bg-[hsl(var(--panel))] p-5 shadow-[var(--edge-strong)] sm:p-6"
+        >
+          <label
+            htmlFor="youtube-url"
+            className="text-xs font-medium text-[hsl(var(--muted))]"
+          >
+            YouTube video or channel URL
+          </label>
+          <div className="mt-2 flex flex-col gap-3 sm:flex-row">
+            <input
+              id="youtube-url"
+              type="url"
+              inputMode="url"
+              autoComplete="url"
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder="https://www.youtube.com/@channel/videos"
+              disabled={isRunning}
+              aria-invalid={Boolean(error)}
+              aria-describedby="url-help"
+              className={`min-h-12 min-w-0 flex-1 rounded-md bg-[hsl(var(--bg))] px-4 py-3 text-sm text-[hsl(var(--text))] shadow-[var(--edge)] transition-[box-shadow,background,color] duration-150 placeholder:text-[hsl(var(--muted-2))] hover:bg-white/[0.02] focus-visible:shadow-[var(--edge-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[hsl(var(--accent))] disabled:cursor-not-allowed disabled:bg-[hsl(var(--panel-2))] disabled:text-[hsl(var(--muted-2))] ${
+                error ? "shadow-[var(--edge-danger)]" : ""
+              }`}
+            />
+            <button
+              type="submit"
+              disabled={
+                !url.trim() || isRunning || submitting || health !== "ready"
+              }
+              aria-busy={submitting}
+              className={`min-h-12 shrink-0 rounded-md bg-[hsl(var(--accent))] px-5 py-3 text-sm font-medium text-[hsl(var(--bg))] shadow-[var(--edge-top)] transition-[box-shadow,background,color] duration-150 hover:bg-[hsl(var(--accent)/0.9)] active:bg-[hsl(var(--accent)/0.82)] disabled:cursor-not-allowed disabled:bg-[hsl(var(--panel-2))] disabled:text-[hsl(var(--muted-2))] disabled:shadow-[var(--edge)] ${buttonFocus}`}
+            >
+              {primaryButtonCopy}
+            </button>
+          </div>
+          <div
+            id="url-help"
+            className="mt-3 flex flex-col gap-1 text-xs text-[hsl(var(--muted-2))] sm:flex-row sm:items-center sm:justify-between"
+          >
+            <span>Signed-in Chrome is used for members-only videos.</span>
+            <span className="break-all font-mono">
+              Output: {compactOutputRoot}/&lt;Channel&gt;
+            </span>
+          </div>
+          {error && (
+            <p
+              className="mt-4 rounded-md bg-red-400/[0.06] px-3 py-3 text-sm leading-5 text-red-200 shadow-[var(--edge-danger)]"
+              role="alert"
+            >
+              {error}
+            </p>
+          )}
+        </form>
+
+        <section
+          aria-labelledby="work-status-title"
+          className="mt-6 w-full min-w-0 max-w-full overflow-hidden rounded-xl bg-[hsl(var(--panel))] p-5 shadow-[var(--edge)] sm:p-6"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p
+                id="work-status-title"
+                className="text-xs font-medium text-[hsl(var(--muted-2))]"
+              >
+                Work status
+              </p>
+              <h2 className="mt-1 text-base font-semibold text-[hsl(var(--text))]">
+                {job?.statusText ?? "Ready for a YouTube URL"}
+              </h2>
+            </div>
+            {isRunning ? (
+              <button
+                type="button"
+                onClick={stopExport}
+                className={`min-h-11 rounded-md bg-[hsl(var(--panel-2))] px-4 py-3 text-xs font-medium text-[hsl(var(--muted))] shadow-[var(--edge)] transition-[box-shadow,background,color] duration-150 hover:bg-white/[0.04] active:bg-white/[0.06] ${buttonFocus}`}
+              >
+                Stop after current
+              </button>
+            ) : job?.outputDir ? (
+              <button
+                type="button"
+                onClick={openFolder}
+                disabled={openingFolder}
+                aria-busy={openingFolder}
+                className={`inline-flex min-h-11 items-center gap-2 rounded-md bg-[hsl(var(--panel-2))] px-4 py-3 text-xs font-medium text-[hsl(var(--muted))] shadow-[var(--edge)] transition-[box-shadow,background,color] duration-150 hover:bg-white/[0.04] hover:text-[hsl(var(--text))] active:bg-white/[0.06] disabled:cursor-not-allowed disabled:text-[hsl(var(--muted-2))] ${buttonFocus}`}
+              >
+                <FolderIcon />
+                {openingFolder ? "Opening…" : "Open folder"}
+              </button>
+            ) : null}
+          </div>
+
+          {job ? (
+            <div className="mt-5" aria-live="polite">
+              <div
+                className="h-1.5 overflow-hidden rounded-full bg-[hsl(var(--panel-2))]"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(job.progress)}
+                aria-label="Export progress"
+              >
+                <div
+                  className="h-full rounded-full bg-[hsl(var(--accent))] transition-[width] duration-150"
+                  style={{
+                    width: `${Math.max(0, Math.min(100, job.progress))}%`,
+                  }}
+                />
+              </div>
+
+              <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-xs">
+                <div className="flex gap-2">
+                  <dt className="text-[hsl(var(--muted-2))]">Processed</dt>
+                  <dd className="font-mono text-[hsl(var(--muted))]">
+                    {job.completed}/{job.total || "…"}
+                  </dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="text-[hsl(var(--muted-2))]">Saved</dt>
+                  <dd className="font-mono text-[hsl(var(--muted))]">
+                    {job.saved}
+                  </dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="text-[hsl(var(--muted-2))]">
+                    Already present
+                  </dt>
+                  <dd className="font-mono text-[hsl(var(--muted))]">
+                    {job.skipped}
+                  </dd>
+                </div>
+                {job.failed > 0 && (
+                  <div className="flex gap-2">
+                    <dt className="text-red-300">Failed</dt>
+                    <dd className="font-mono text-red-200">{job.failed}</dd>
+                  </div>
+                )}
+              </dl>
+
+              {job.outputDir && (
+                <div className="mt-4 flex items-start gap-2 rounded-md bg-[hsl(var(--bg))] px-3 py-3 text-xs shadow-[var(--edge)]">
+                  <FolderIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[hsl(var(--muted-2))]" />
+                  <span className="break-all font-mono leading-5 text-[hsl(var(--muted-2))]">
+                    {job.outputDir}
+                  </span>
+                </div>
+              )}
+
+              {job.error && (
+                <div
+                  className="mt-4 rounded-md bg-red-400/[0.06] px-3 py-3 text-sm leading-5 text-red-200 shadow-[var(--edge-danger)]"
+                  role="alert"
+                >
+                  <p>{job.error}</p>
+                  <p className="mt-1 text-xs text-red-200/70">
+                    Completed files are safe. Start the same URL again to
+                    resume.
+                  </p>
+                </div>
+              )}
+
+              {visibleItems.length > 0 && (
+                <div className="mt-5">
+                  <p className="text-xs font-medium text-[hsl(var(--muted-2))]">
+                    Latest activity
+                  </p>
+                  <ol className="mt-2 space-y-2">
+                    {visibleItems.map((item) => (
+                      <li
+                        key={item.videoId}
+                        className="flex items-start gap-3 rounded-md bg-[hsl(var(--panel-2))] px-3 py-3 shadow-[var(--edge)]"
+                      >
+                        <StatusMark state={item.state} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+                            <p className="truncate text-sm text-[hsl(var(--muted))]">
+                              {item.title}
+                            </p>
+                            <span className="shrink-0 text-xs text-[hsl(var(--muted-2))]">
+                              {itemLabel(item.state)}
+                            </span>
+                          </div>
+                          <p className="mt-1 truncate text-xs text-[hsl(var(--muted-2))]">
+                            {item.detail}
+                            {item.segments
+                              ? ` · ${item.segments.toLocaleString()} segments`
+                              : ""}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-5 rounded-md bg-[hsl(var(--panel-2))] px-4 py-5 shadow-[var(--edge)]">
+              <p className="text-sm text-[hsl(var(--muted))]">
+                Nothing is running.
+              </p>
+              <p className="mt-1 text-xs leading-5 text-[hsl(var(--muted-2))]">
+                Channel exports skip existing files and continue from the first
+                missing transcript.
+              </p>
+            </div>
+          )}
+        </section>
+
+        <footer className="mt-6 flex flex-col gap-1 px-1 text-xs leading-5 text-[hsl(var(--muted-2))] sm:flex-row sm:items-center sm:justify-between">
+          <span>Captions first, local Whisper when needed.</span>
+          <span>Your transcript files stay on this Mac.</span>
+        </footer>
+      </div>
+    </main>
   );
 }

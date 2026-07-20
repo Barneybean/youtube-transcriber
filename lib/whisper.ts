@@ -95,6 +95,15 @@ function cleanupOrphanedProcesses(): void {
 // Run cleanup on module load
 cleanupOrphanedProcesses();
 
+/**
+ * Local Whisper model. Default is large-v3-turbo: near large-v3 accuracy at
+ * ~8x its speed — the "base" model garbles non-English finance/tech speech.
+ * Override with WHISPER_MODEL (e.g. "base" for quick low-accuracy runs).
+ */
+export function getWhisperModel(): string {
+  return process.env.WHISPER_MODEL?.trim() || "large-v3-turbo";
+}
+
 function getWhisperBackend(): WhisperBackend {
   if (WHISPER_BACKEND_OVERRIDE === "mlx" || WHISPER_BACKEND_OVERRIDE === "openai") {
     return WHISPER_BACKEND_OVERRIDE;
@@ -302,7 +311,8 @@ export async function downloadAudio(videoId: string, outputDir: string, onProgre
       }
 
       // If auth-related, retry once with browser cookies
-      const isAuthError = /sign in to confirm|age-restricted/i.test(raw);
+      const isAuthError =
+        /sign in to confirm|age-restricted|available to this channel.?s members|members-only content|account cookies are no longer valid/i.test(raw);
       if (isAuthError && attempt < maxAttempts) {
         const browser = YTDLP_BROWSER;
         console.log(`[whisper] Auth required, retrying with ${browser} cookies...`);
@@ -351,7 +361,7 @@ export async function downloadAudio(videoId: string, outputDir: string, onProgre
 async function runWhisper(
   audioPath: string,
   outputDir: string,
-  model: string = "base"
+  model: string = getWhisperModel()
 ): Promise<TranscriptSegment[]> {
   await fs.mkdir(outputDir, { recursive: true });
 
@@ -521,7 +531,7 @@ function mergeSpeakers(
  */
 export async function transcribeAudioFileWithWhisper(
   audioPath: string,
-  model: string = "base",
+  model: string = getWhisperModel(),
   onProgress?: ProgressCallback
 ): Promise<TranscriptSegment[]> {
   if (transcriptionInProgress) {
@@ -568,7 +578,7 @@ export async function transcribeAudioFileWithWhisper(
  */
 export async function transcribeWithWhisper(
   videoId: string,
-  model: string = "base",
+  model: string = getWhisperModel(),
   onProgress?: ProgressCallback
 ): Promise<TranscriptSegment[]> {
   if (transcriptionInProgress) {
