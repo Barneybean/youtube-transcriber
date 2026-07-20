@@ -7,7 +7,6 @@ dist/
 build/
 out/
 .next/
-mcp-server/dist/
 
 # Database
 *.db
@@ -17,7 +16,6 @@ mcp-server/dist/
 .idea/
 .vscode/
 .claude/*
-!.claude/mcp.json
 .cursor/
 *.swp
 *.swo
@@ -55,8 +53,6 @@ app/dither/
 .private/
 
 # Store listing / submission copy — competitive surface, keep local
-extension/store-listing*.md
-extension/STORE-SUBMISSION.md
 
 # Email templates + send scripts — business IP, lives in cloud repo (private fork)
 # Old commit 9c1c385 leaked these to public OSS history; do not re-add here
@@ -86,4 +82,4 @@ docs/TEST_USER_CHECKLIST.md
 tmp/email-renders/
 
 # Chrome unpacked dev keypair — never commit
-extension/dev-key.pem
+tsconfig.tsbuildinfo

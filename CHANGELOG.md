@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-19
+
+### Removed
+
+- **Chrome extension** (`extension/`, native messaging host, related npm scripts) — the fork is now local-app-only.
+- **MCP server** (`mcp-server/`, `npm run mcp:*`, `.claude/mcp.json`) and **contrib skills** (`contrib/`) — use the REST API (`docs/API.md`) for programmatic access.
+- **Hosted/waitlist references** and extension-focused docs — README and `docs/TESTING.md` now describe only the local file-first workflow.
+
 ## 2026-07-18
 
 ### Added

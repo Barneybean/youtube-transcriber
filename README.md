@@ -4,20 +4,20 @@
 
 **YouTube research to organized local Markdown in one click. Runs locally, costs nothing.**
 
-https://github.com/user-attachments/assets/32491284-5c78-4a74-a580-ff3a8c256243
+Paste a YouTube video or channel URL and get timestamped Markdown transcripts on disk, organized by channel. Built for research workflows where the files — not a web library — are the product.
 
-**Don't want to install anything?** A hosted version is coming soon — no setup required. **[Join the waitlist →](https://waitlist-site-alpha.vercel.app)**
+> This is a simplified fork of [lifesized/youtube-transcriber](https://github.com/lifesized/youtube-transcriber), stripped down to the essential file-first workflow: no browser extension, no MCP server, no hosted mode.
 
 ## Get Running in 60 Seconds
 
 ```bash
-git clone https://github.com/lifesized/youtube-transcriber.git
+git clone https://github.com/Barneybean/youtube-transcriber.git
 cd youtube-transcriber
 npm run setup
 npm run dev
 ```
 
-Open [http://localhost:19720](http://localhost:19720), paste a YouTube video or channel URL, and start the export. Transcript files are saved under `Desktop/AI Trading/Youtube_Transcript/<Channel Name>/`; existing files are skipped automatically when you run the same source again.
+Open [http://localhost:19720](http://localhost:19720), paste a YouTube video or channel URL, and start the export. Transcript files are saved under your configured export folder as `<Channel Name>/<date> - <title>.md`; existing files are skipped automatically when you run the same source again.
 
 Use Node.js 24 (`.nvmrc` is included). With Homebrew on macOS:
 
@@ -29,150 +29,28 @@ export PATH="$(brew --prefix node@24)/bin:$PATH"
 
 > `npm run setup` installs all dependencies (yt-dlp, ffmpeg, Whisper, MLX on Apple Silicon) and configures everything automatically. Requires Node.js 20.9–24, Python 3.8+, and a package manager (Homebrew / apt / dnf / pacman).
 
-## Chrome Extension
-
-<img width="375" height="565" alt="CleanShot 2026-03-17 at 22 53 31@2x" src="https://github.com/user-attachments/assets/d4bccf92-9941-46cc-b4f4-b7bbc3454ff7" />
-
-https://github.com/user-attachments/assets/081c8d90-a6e1-4b4d-b6cd-bc8787bc0a3b
-
-Transcribe any YouTube video or Spotify podcast episode directly from your browser without leaving the page. The extension opens as a persistent side panel — it stays open as you navigate between videos and detects each one automatically.
-
-The extension works in two modes:
-
-- **Cloud** (default) — hosted transcription for private beta users. Enter your API key in extension settings and go. No local setup needed.
-- **Self-hosted** — connect to your local instance at `localhost:19720`. Switch to "Self-hosted" in extension settings.
-
-### Install from Chrome Web Store
-
-> **Note:** The extension is not yet on the Chrome Web Store. Install it manually in a few steps while we go through the review process.
-
-### Install from source (for self-hosted or development)
-
-1. Make sure the local service is running (`npm run dev`)
-2. Open Chrome and go to `chrome://extensions`
-3. Enable **Developer mode** (toggle, top right)
-4. Click **Load unpacked**
-5. Select the `extension/` folder inside this repo
-6. Open extension settings and switch mode to **Self-hosted**
-7. Click the YouTube Transcriber icon in your toolbar to open the side panel
-
-### Usage
-
-Navigate to any YouTube video or Spotify episode, open the side panel, and click **Transcribe**. In cloud mode, transcripts open in the hosted app. In self-hosted mode, they open in the local web app at `http://localhost:19720`.
-
-### Connectors — send transcripts to Obsidian or Notion
-
-Each transcript row's `⋯` menu can push the result to an external app. Connect once in **Settings → Connectors**, then use the menu on any recent transcript.
-
-**Obsidian** — works in both cloud and self-hosted mode. Stateless: the extension builds an `obsidian://new?...` URL on your machine and hands it to the desktop app. Nothing transcript-related leaves the device.
-
-1. Install [Obsidian](https://obsidian.md) and open your vault.
-2. In the extension panel: gear icon → **Connectors** → toggle **Obsidian** on.
-3. Type your vault name **exactly** as it appears in Obsidian's sidebar (case-sensitive).
-4. (Recommended for long transcripts) Install the [Advanced URI](https://github.com/Vinzent03/obsidian-advanced-uri) community plugin in Obsidian, then expand **More** under the vault field and check **Use Advanced URI plugin**. Stock `obsidian://new` has a URL length cap that truncates long videos; Advanced URI handles them reliably.
-5. From any recent transcript, click `⋯` → **Send to Obsidian**. Allow the protocol handler the first time Chrome prompts you.
-
-**Notion** — cloud mode only. Uses OAuth; tokens are stored encrypted by the hosted service. Toggle **Notion** on in Connectors, authorize from the side panel, and share at least one page or database (a dedicated database works best) with the integration. Setup docs will ship with the hosted version.
-
----
-
-## Use with Claude Code, Claude Desktop & Cursor
-
-Three ways to use this with AI assistants — pick the one that fits:
-
-### MCP Server (recommended)
-
-The MCP server gives you tools like `transcribe_and_summarize` directly in your AI client. Requires the service running (`npm run dev`).
-
-**Claude Code** — already configured. Clone the repo and the `.claude/mcp.json` is included:
-
-```bash
-git clone https://github.com/lifesized/youtube-transcriber.git
-cd youtube-transcriber
-npm run setup && npm run dev
-# Open in Claude Code — MCP tools are ready to use
-```
-
-**Claude Desktop / Cursor** — run `npm run mcp:config` and add the output to your client config ([full setup guide](./docs/MCP.md)):
-
-| Client         | Config file                                                       |
-| -------------- | ----------------------------------------------------------------- |
-| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Cursor         | `.cursor/mcp.json`                                                |
-
-### Skill (no server needed)
-
-https://github.com/user-attachments/assets/73a62192-746c-4ec0-b1d5-b46608441bdd
-
-Install as a Claude Code or OpenClaw skill. Two flavors: **Lite** (zero setup, just `yt-dlp`, YouTube subtitles only) or **Full** (requires the service running, adds Whisper fallback, diarization, and persistent library).
-
-```bash
-# Lite skill (yt-dlp only, no server)
-cp contrib/claude-code/SKILL-lite.md ~/.claude/skills/youtube-transcriber/SKILL.md
-
-# Full skill (requires service running)
-cp -r contrib/claude-code ~/.claude/skills/youtube-transcriber
-```
-
-|                       | Lite Skill | Full Skill / MCP |
-| --------------------- | :--------: | :--------------: |
-| YouTube captions      |    Yes     |       Yes        |
-| Auto-generated subs   |    Yes     |       Yes        |
-| Whisper transcription |     —      |       Yes        |
-| Speaker diarization   |     —      |       Yes        |
-| Persistent library    |     —      |       Yes        |
-| Requires server       |     No     |       Yes        |
-
-### Triggers
-
-Once set up (MCP or skill), just type naturally:
-
-> _"summarize https://youtube.com/watch?v=..."_
-> _"ts https://youtube.com/watch?v=..."_ (transcribe + summarize)
-> _"t https://youtube.com/watch?v=..."_ (transcript only)
-
-Or just paste a YouTube URL — it auto-activates.
-
----
-
 ## How It Works
 
-Paste a URL. The app grabs the transcript using the fastest method available on your system:
-
-**YouTube:**
+Paste a URL. The app grabs the transcript using a fixed fallback order:
 
 1. **YouTube Captions** — fetches official captions when they exist (< 5 sec)
-2. **Groq Whisper API** — when configured, Groq is the fixed first audio fallback after captions
+2. **Groq Whisper API** — when configured, Groq is the first audio fallback
 3. **OpenAI Whisper API** — when configured, OpenAI runs after Groq
 4. **Ordered cloud fallbacks** — enabled OpenRouter and custom providers run in the order selected in Settings
 5. **Local Whisper** — always the final fallback
 
 Every exported Markdown file includes a `Transcriber` field, and batch summaries list the source used for every file.
 
-**Spotify Podcasts:**
-
-1. Fetches episode metadata from Spotify's official API
-2. Discovers the podcast's public RSS feed via iTunes
-3. Downloads full episode audio from the podcast CDN
-4. Transcribes via Cloud Whisper or local Whisper
-
-> Spotify support requires `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in `.env` (free from [developer.spotify.com](https://developer.spotify.com/dashboard)). Spotify-exclusive podcasts without a public RSS feed are not supported.
-
-Works fully offline by default for YouTube. Cloud Whisper is optional — bring your own API key to enable it.
+Works fully offline by default. Cloud Whisper is optional — bring your own API key to enable it.
 
 ## Features
 
 - **Channel-organized local export** — process one video or a complete YouTube channel into timestamped Markdown files grouped by channel name
 - **Authenticated members-only access** — use your signed-in Chrome profile for channels and videos included in your memberships
 - **Checkpointed batch resume** — reuse stored transcripts, skip completed files, retry failures, and stop safely after the current video
-- **YouTube + Spotify** — paste a YouTube video URL or Spotify podcast episode URL
 - **Local + cloud transcription** — free local Whisper by default, with optional OpenAI, Groq, OpenRouter, or custom endpoints
-- **Chrome extension** — persistent side panel that transcribes YouTube videos and Spotify episodes from your browser
 - **Multi-language captions** — request captions in any language YouTube supports (see [Language Preference](#language-preference) below)
-- **Summarize with LLM** — send any transcript straight to ChatGPT or Claude. ChatGPT opens with the prompt pre-filled; Claude copies it to your clipboard so you can paste (⌘V) into a new chat
-- **Queue system** — batch-process multiple videos
-- **Search & filter** your transcript library
-- **Export as Markdown** or copy to clipboard with timestamps
+- **Optional AI proofreading** — fix ASR errors in Whisper output with an LLM pass (bring your own Anthropic API key)
 - **Duplicate detection** — same video won't be saved twice
 - **Speaker diarization** — optional speaker identification with pyannote.audio
 - **SQLite storage** — all data stays on your machine
@@ -181,8 +59,6 @@ Works fully offline by default for YouTube. Cloud Whisper is optional — bring 
 Full REST API docs: [`docs/API.md`](./docs/API.md) | OpenAPI spec: [`docs/openapi.yaml`](./docs/openapi.yaml)
 
 ## Cloud Transcription Providers
-
-<img width="1824" height="1175" alt="CleanShot 2026-03-17 at 22 50 27" src="https://github.com/user-attachments/assets/4a413c9b-965c-44d0-a264-2b1ae9ed12d5" />
 
 Add one or more cloud providers in **Settings** (gear icon, bottom-left). YouTube captions are always attempted first. When configured, Groq is the first audio fallback and OpenAI is next; drag the remaining cloud providers to set their order. Local Whisper is always last.
 
@@ -236,10 +112,6 @@ curl -X POST http://localhost:19720/api/transcripts \
 YTT_CAPTION_LANGS="zh-Hans,zh-Hant,en"
 ```
 
-The MCP tools (`transcribe`, `transcribe_and_summarize`) also accept an optional `lang` parameter.
-
----
-
 ## Manual Installation
 
 If the automated setup doesn't work or you prefer to do it yourself:
@@ -248,7 +120,7 @@ If the automated setup doesn't work or you prefer to do it yourself:
 <summary>Expand manual steps</summary>
 
 ```bash
-git clone https://github.com/lifesized/youtube-transcriber.git
+git clone https://github.com/Barneybean/youtube-transcriber.git
 cd youtube-transcriber
 
 # Install Node dependencies
@@ -343,18 +215,10 @@ Returns JSON with per-check pass/fail — useful for Docker health checks or deb
 
 </details>
 
-## Contributing
-
-Contributions welcome — feel free to submit issues or pull requests.
-
-If this saves you time, a ⭐ on GitHub helps others find it.
-
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE)
 
 ## Credits
 
-Designed and built by [lifesized](https://github.com/lifesized).
-
-**Built with:** [Intent by Augment](https://www.augmentcode.com/intent), [Cursor](https://cursor.sh), [Codex](https://openai.com/index/openai-codex/), [Claude Code](https://github.com/anthropics/claude-code), and [Ghostty](https://ghostty.org).
+Original project designed and built by [lifesized](https://github.com/lifesized) — [lifesized/youtube-transcriber](https://github.com/lifesized/youtube-transcriber). This fork simplifies it to the local file-first workflow.

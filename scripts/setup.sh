@@ -157,20 +157,6 @@ echo "🔊 Installing pyannote.audio for speaker diarization..."
 pip install pyannote.audio || echo "⚠️  pyannote.audio install failed (speaker diarization will be unavailable)"
 
 # ---------------------------------------------------------------------------
-# MCP server (optional)
-# ---------------------------------------------------------------------------
-echo ""
-read -p "🔌 Do you want access to this skill in Claude Desktop? [y/N] " INSTALL_MCP
-if [[ "$INSTALL_MCP" =~ ^[Yy]$ ]]; then
-    echo "Building MCP server..."
-    cd mcp-server && npm install && npm run build && cd ..
-    echo "✓ MCP server built at mcp-server/dist/index.js"
-    echo "  Run 'npm run mcp:config' to get your client config snippet."
-else
-    echo "Skipped MCP server. You can install it later with: npm run mcp:build"
-fi
-
-# ---------------------------------------------------------------------------
 # Verify setup
 # ---------------------------------------------------------------------------
 echo ""
