@@ -6,6 +6,8 @@
 
 A free, open-source **YouTube transcript generator**: paste a video or channel URL and get timestamped Markdown transcripts on disk, organized by channel. Convert YouTube to text with official captions or Whisper speech-to-text, batch-download transcripts for an entire channel, and keep everything searchable, private, and local. Built for research workflows where the files — not a web library — are the product.
 
+![Transcript Desk web UI — paste a YouTube video or channel URL and export timestamped Markdown transcripts locally](docs/media/transcript-desk-ui.png)
+
 | | |
 |---|---|
 | **What** | Local web app (Next.js 15) + REST API for YouTube transcription |
