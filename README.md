@@ -4,7 +4,7 @@
 
 **YouTube research to organized local Markdown in one click. Runs locally, costs nothing.**
 
-A free, open-source **YouTube transcript generator**: paste a video or channel URL and get timestamped Markdown transcripts on disk, organized by channel. Convert YouTube to text with official captions or Whisper speech-to-text, batch-download transcripts for an entire channel, and keep everything searchable, private, and local. Built for research workflows where the files — not a web library — are the product.
+A free, open-source **YouTube transcript generator**: paste a video or channel URL and get timestamped Markdown transcripts on disk, organized by channel. Convert YouTube to text with official captions or Whisper speech-to-text, batch-download transcripts for an entire channel, or grab the **full video as MP4 together with its transcript** — everything searchable, private, and local. Built for research workflows where the files — not a web library — are the product.
 
 ![Transcript Desk web UI — paste a YouTube video or channel URL and export timestamped Markdown transcripts locally](docs/media/transcript-desk-ui.png)
 
@@ -12,10 +12,10 @@ A free, open-source **YouTube transcript generator**: paste a video or channel U
 |---|---|
 | **What** | Local web app (Next.js 15) + REST API for YouTube transcription |
 | **Runs at** | `http://localhost:19720` (`npm run dev`) |
-| **Output** | `transcript/<Channel Name>/<date> - <title>.md` (configurable via `YTT_EXPORT_ROOT`) |
+| **Output** | `transcript/<Channel Name>/<date> - <title>.md` · videos in `<Channel Name>/video/*.mp4` (root configurable via `YTT_EXPORT_ROOT`) |
 | **Storage** | Local SQLite (`dev.db`) — nothing leaves your machine by default |
 | **Engines** | YouTube captions → optional cloud Whisper (Groq/OpenAI/OpenRouter) → local Whisper (MLX on Apple Silicon) |
-| **Extras** | Automatic repetition-collapse repair · AI proofreading (API key or local Claude Code CLI) |
+| **Extras** | Full-video MP4 download · automatic repetition-collapse repair · AI proofreading (API key or local Claude Code CLI) |
 | **License** | AGPL-3.0 — fork of [lifesized/youtube-transcriber](https://github.com/lifesized/youtube-transcriber) |
 
 ## About this fork
@@ -26,7 +26,7 @@ Transcript Desk is a **fork and customization of [lifesized/youtube-transcriber]
 - publishes its **complete modified source** in this repository;
 - documents its changes in [CHANGELOG.md](./CHANGELOG.md).
 
-Changes from upstream: **removed** the Chrome extension, MCP server, contrib skills, and hosted mode (local-only app); **added** the file-first channel export workflow, automatic collapse repair, and AI proofreading; restructured the code by domain. If you want the extension, hosted mode, or MCP server, use the [original project](https://github.com/lifesized/youtube-transcriber).
+Changes from upstream: **removed** the Chrome extension, MCP server, contrib skills, and hosted mode (local-only app); **added** the file-first channel export workflow, full-video MP4 download, automatic collapse repair, and AI proofreading; restructured the code by domain. If you want the extension, hosted mode, or MCP server, use the [original project](https://github.com/lifesized/youtube-transcriber).
 
 ## Quickstart
 
@@ -52,6 +52,15 @@ curl http://localhost:19720/api/health      # same checks as JSON, for a running
 
 - **Transcribe a single video** — captions when they exist (< 5 sec), Whisper otherwise.
 - **Export a whole channel** — every video becomes a timestamped Markdown file under `transcript/<Channel Name>/`, with inventory and summary files. Checkpointed: re-runs skip existing files, failures retry, a running batch stops safely.
+- **Download the video as MP4 + transcript** — the "MP4 + transcript" button (or `POST /api/download`) saves the full video at best quality to `<Channel Name>/video/` and extracts its transcript through the normal pipeline, side by side in the same library:
+
+  ```
+  <export root>/
+    <Channel Name>/
+      2026-07-15 - Title.md               ← transcripts
+      video/
+        2026-07-15 - Title [videoId].mp4  ← downloaded videos
+  ```
 - **Repair repetition collapse automatically** — Whisper can degenerate into token loops on speech under music beds, losing that content; collapsed windows are detected and re-transcribed with a stronger model.
 - **Proofread with an AI agent** — ASR homophone/name errors fixed by Claude after transcription, via an Anthropic API key **or** your local Claude Code CLI (no key). You're told which agent will run *before* transcription starts; a broken setup falls back to the other available agent.
 - **Access members-only videos** — uses your signed-in Chrome profile for channels you're a member of.
@@ -77,6 +86,7 @@ Everything the app does is scriptable. Full reference: [docs/API.md](./docs/API.
 | `/api/transcripts/progress` | GET | Live progress (Server-Sent Events) |
 | `/api/export` | POST | Start a channel batch: `{"url": "...", "year": 2026?}` |
 | `/api/export` | GET | Batch status: phase, counts, per-video states, `outputRoot` |
+| `/api/download` | POST | Save the full MP4 + transcript: `{"url": "...", "transcript": false?}` |
 | `/api/health` | GET | Per-dependency pass/fail (Node, Python, ffmpeg, yt-dlp, Whisper, DB) |
 
 ```bash
@@ -89,6 +99,11 @@ curl -X POST http://localhost:19720/api/transcripts \
 curl -X POST http://localhost:19720/api/export \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://www.youtube.com/@SomeChannel/videos", "year": 2026}'
+
+# Full video → MP4 in <Channel>/video/, transcript extracted alongside
+curl -X POST http://localhost:19720/api/download \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://youtube.com/watch?v=..."}'
 ```
 
 **Behavior an agent should know:**
@@ -99,6 +114,7 @@ curl -X POST http://localhost:19720/api/export \
 - **Duplicates are cheap.** Posting an already-transcribed URL returns the stored record instantly with `"duplicate": true`. Same for channel exports: existing files are skipped, so re-running is always safe.
 - **Response shape:** `transcript` is a JSON string of segments `[{text, startMs, durationMs}]`; `source` records the engine (`youtube_captions`, `whisper_local`, `whisper_cloud_groq`, …); `proofreadNotice` (Whisper paths) states which AI agent proofread the result.
 - **Files vs library:** channel exports (`/api/export`) write Markdown files to `outputRoot`; single videos (`/api/transcripts`) store to the SQLite library — use `/download` to get the Markdown.
+- **MP4 download is synchronous** and can take minutes for long videos — the `POST /api/download` response returns when the file is on disk (`video.file`, `video.skipped` for dedup by video id). The transcript half runs as a background export job; if one is already running, `transcriptNote` says so and only the MP4 is produced.
 - **Errors are actionable strings** in `{"error": "..."}` — 400 invalid URL, 403 bot detection (VPN), 429 busy/rate-limited, 500 with the failure chain of every engine tried.
 
 ## Configuration
@@ -107,7 +123,8 @@ Everything lives in `.env` ([.env.example](./.env.example) has the full annotate
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `YTT_EXPORT_ROOT` | `./transcript` | Where channel exports are written |
+| `YTT_EXPORT_ROOT` | `./transcript` | Where channel exports and MP4 downloads are written |
+| `VIDEO_DOWNLOAD_FORMAT` | `bv*+ba/b` | yt-dlp format selector for MP4 downloads (default: best quality) |
 | `YTT_CAPTION_LANGS` | `en` | Caption language priority, e.g. `zh-Hans,zh-Hant,en` |
 | `WHISPER_MODEL` | `large-v3-turbo` | Local Whisper model (`base` = faster, lower accuracy) |
 | `WHISPER_REPAIR_ENABLED` | `true` | Auto re-transcribe collapsed windows |
@@ -218,6 +235,9 @@ Yes — that's the point of the Whisper fallback. No captions means the audio is
 
 **What languages does it support?**
 Any language YouTube or Whisper supports. Set a caption priority list like `zh-Hans,zh-Hant,en` and the first available wins; Whisper auto-detects the spoken language.
+
+**Can it download the YouTube video itself, not just the transcript?**
+Yes — the "MP4 + transcript" button (or `POST /api/download`) saves the full video at best available quality into `<Channel Name>/video/` in your library and extracts the transcript alongside it. Re-requesting the same video skips the download.
 
 **Is my data private?**
 Everything runs on your machine: SQLite database, local Markdown files, local Whisper. Nothing is uploaded unless you opt into a cloud provider.

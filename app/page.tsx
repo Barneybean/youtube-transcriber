@@ -137,6 +137,12 @@ export default function Home() {
   );
   const [health, setHealth] = useState<HealthState>("checking");
   const [submitting, setSubmitting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadResult, setDownloadResult] = useState<{
+    file: string;
+    skipped: boolean;
+    note?: string;
+  } | null>(null);
   const [openingFolder, setOpeningFolder] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -200,6 +206,43 @@ export default function Home() {
       );
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function downloadVideo() {
+    if (!url.trim() || downloading || health !== "ready") return;
+    setDownloading(true);
+    setError(null);
+    setDownloadResult(null);
+    try {
+      const response = await fetch("/api/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = (await response.json()) as {
+        video?: { file: string; skipped: boolean };
+        job?: ExportJob | null;
+        transcriptNote?: string;
+        error?: string;
+      };
+      if (!response.ok || !data.video) {
+        throw new Error(data.error || "Could not download the video.");
+      }
+      setDownloadResult({
+        file: data.video.file,
+        skipped: data.video.skipped,
+        note: data.transcriptNote,
+      });
+      if (data.job) setJob(data.job);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not download the video.",
+      );
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -336,6 +379,18 @@ export default function Home() {
             >
               {primaryButtonCopy}
             </button>
+            <button
+              type="button"
+              onClick={downloadVideo}
+              disabled={
+                !url.trim() || downloading || health !== "ready"
+              }
+              aria-busy={downloading}
+              title="Download the full video as MP4 and extract its transcript"
+              className={`min-h-12 shrink-0 rounded-md bg-[hsl(var(--panel-2))] px-4 py-3 text-sm font-medium text-[hsl(var(--muted))] shadow-[var(--edge)] transition-[box-shadow,background,color] duration-150 hover:bg-white/[0.04] hover:text-[hsl(var(--text))] active:bg-white/[0.06] disabled:cursor-not-allowed disabled:text-[hsl(var(--muted-2))] disabled:hover:bg-[hsl(var(--panel-2))] ${buttonFocus}`}
+            >
+              {downloading ? "Downloading…" : "MP4 + transcript"}
+            </button>
           </div>
           <div
             id="url-help"
@@ -353,6 +408,30 @@ export default function Home() {
             >
               {error}
             </p>
+          )}
+          {downloadResult && (
+            <div
+              className="mt-4 flex items-start gap-2 rounded-md bg-[hsl(var(--bg))] px-3 py-3 text-xs shadow-[var(--edge)]"
+              role="status"
+            >
+              <FileIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[hsl(var(--muted-2))]" />
+              <div className="min-w-0">
+                <p className="text-[hsl(var(--muted))]">
+                  {downloadResult.skipped
+                    ? "Video already in your library"
+                    : "Video saved"}
+                  {!downloadResult.note && " · transcript export started"}
+                </p>
+                <p className="mt-1 break-all font-mono leading-5 text-[hsl(var(--muted-2))]">
+                  {downloadResult.file}
+                </p>
+                {downloadResult.note && (
+                  <p className="mt-1 leading-5 text-[hsl(var(--muted-2))]">
+                    {downloadResult.note}
+                  </p>
+                )}
+              </div>
+            </div>
           )}
         </form>
 

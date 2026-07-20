@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Full-video MP4 download with transcript** — the "MP4 + transcript" button (and `POST /api/download`) saves the video at best available quality to `<export root>/<Channel Name>/video/<upload date> - <title> [videoId].mp4` and extracts the transcript through the normal pipeline into the same channel folder. Re-requesting a downloaded video skips the download (dedup by video id); members-only videos retry with signed-in browser cookies; `{"transcript": false}` saves only the MP4. Configurable via `VIDEO_DOWNLOAD_FORMAT` and `VIDEO_DOWNLOAD_TIMEOUT_MS`.
+
 - **Proofread agent preflight** — before audio transcription starts, the app resolves which AI agent will proofread (local Claude CLI or Anthropic API), announces it in the progress stream, and repairs a broken setup up front by falling back to the other available agent; when neither is available it says so and transcribes without proofreading. The `/api/transcripts` response includes the resulting `proofreadNotice`.
 
 ### Changed

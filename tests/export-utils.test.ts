@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildTranscriptFilename,
+  buildVideoFilename,
   renderTranscriptMarkdown,
   safePathSegment,
 } from "../lib/export/export-utils.js";
@@ -40,4 +41,22 @@ test("renderTranscriptMarkdown produces durable timestamped study notes", () => 
   assert.match(markdown, /\*\*Transcriber:\*\* YouTube captions \(yt-dlp\)/);
   assert.match(markdown, /\[00:00\] First idea/);
   assert.match(markdown, /\[01:05\] Second idea/);
+});
+
+test("buildVideoFilename prefixes upload date and sanitizes the title", () => {
+  assert.equal(
+    buildVideoFilename("美股必看! 大招: 半导体?", "UIEzt1gGCmk", "2026-07-18"),
+    "2026-07-18 - 美股必看! 大招 半导体 [UIEzt1gGCmk].mp4",
+  );
+});
+
+test("buildVideoFilename omits the date prefix when upload date is unknown or malformed", () => {
+  assert.equal(
+    buildVideoFilename("Clip", "abc123def45"),
+    "Clip [abc123def45].mp4",
+  );
+  assert.equal(
+    buildVideoFilename("Clip", "abc123def45", "20260718"),
+    "Clip [abc123def45].mp4",
+  );
 });

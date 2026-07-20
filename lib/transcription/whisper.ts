@@ -263,7 +263,7 @@ async function runMlxWhisper(
 /**
  * Classify a yt-dlp error into a user-friendly message.
  */
-function classifyYtdlpError(raw: string): string {
+export function classifyYtdlpError(raw: string): string {
   if (/n challenge solving failed|n function possibilities/i.test(raw)) {
     return "Captions unavailable and audio download failed. This may be a temporary issue, try again in a moment.";
   }

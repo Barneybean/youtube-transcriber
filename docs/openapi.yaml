@@ -172,6 +172,77 @@ paths:
         "404":
           description: Transcript not found
 
+  /api/download:
+    post:
+      operationId: downloadVideoMp4
+      summary: Save the full video as MP4 into the transcript library and extract its transcript
+      description: >
+        Synchronous for the MP4 half — returns once the file is on disk at
+        <export root>/<Channel Name>/video/. Unless transcript is false, a
+        background export job also extracts the transcript (poll GET /api/export).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  description: A single YouTube video URL (not a channel or playlist)
+                  example: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                transcript:
+                  type: boolean
+                  default: true
+                  description: false to save only the MP4 without extracting a transcript
+      responses:
+        "200":
+          description: MP4 saved (skipped=true when a file for the video id already existed)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  video:
+                    type: object
+                    properties:
+                      file:
+                        type: string
+                        description: Absolute path of the saved MP4
+                      fileName:
+                        type: string
+                      title:
+                        type: string
+                      channel:
+                        type: string
+                      videoId:
+                        type: string
+                      sizeBytes:
+                        type: integer
+                      skipped:
+                        type: boolean
+                  job:
+                    nullable: true
+                    description: Transcript export job snapshot, or null if not started
+                  transcriptNote:
+                    type: string
+                    nullable: true
+                    description: Why the transcript was not started, when job is null
+        "400":
+          description: Invalid URL, channel/playlist URL, or download failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: The same video is already downloading
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 components:
   schemas:
     Video:

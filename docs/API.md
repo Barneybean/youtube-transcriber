@@ -114,6 +114,54 @@ Returns a `.md` file with the formatted transcript.
 
 ---
 
+### Download Video (MP4 + transcript)
+
+Save the full video as MP4 into the transcript library and extract its transcript alongside it.
+
+```
+POST /api/download
+```
+
+**Request:**
+```json
+{
+  "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  "transcript": true
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `url` | Yes | A single YouTube video URL (not a channel or playlist) |
+| `transcript` | No | `false` to save only the MP4. Default `true`: a background export job extracts the transcript through the normal pipeline |
+
+**Response:**
+```json
+{
+  "video": {
+    "file": "<export root>/<Channel Name>/video/2026-07-15 - Title [dQw4w9WgXcQ].mp4",
+    "fileName": "2026-07-15 - Title [dQw4w9WgXcQ].mp4",
+    "title": "Title",
+    "channel": "Channel Name",
+    "videoId": "dQw4w9WgXcQ",
+    "sizeBytes": 96331315,
+    "skipped": false
+  },
+  "job": { "phase": "discovering" },
+  "transcriptNote": null
+}
+```
+
+The call is synchronous for the MP4 half — it returns once the file is on disk, which can take minutes for long videos. `skipped: true` means a file for the same video id already existed (dedup). `job` is the transcript export job (poll `GET /api/export`); when a transcript could not be started (e.g. another export is running), `job` is `null` and `transcriptNote` explains why.
+
+| Status | Description |
+|--------|-------------|
+| 200 | MP4 saved (or already present) |
+| 400 | Invalid URL, channel/playlist URL, or download failure |
+| 409 | The same video is already downloading |
+
+---
+
 ### Summarize Transcript
 
 Summarize a transcript using an LLM provider. The API key is passed per-request and never stored.

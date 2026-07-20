@@ -32,6 +32,18 @@ export function buildTranscriptFilename(
   return `${order} - ${safeTitle} [${videoId}].md`;
 }
 
+export function buildVideoFilename(
+  title: string,
+  videoId: string,
+  uploadDate?: string,
+): string {
+  const safeTitle = safePathSegment(title, "Untitled");
+  const datePrefix = /^\d{4}-\d{2}-\d{2}$/.test(uploadDate ?? "")
+    ? `${uploadDate} - `
+    : "";
+  return `${datePrefix}${safeTitle} [${videoId}].mp4`;
+}
+
 export function renderTranscriptMarkdown({
   title,
   author,
