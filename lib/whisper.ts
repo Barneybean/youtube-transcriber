@@ -422,7 +422,7 @@ async function runWhisper(
   const jsonPath = expectedJsonPath(audioPath, outputDir);
 
   const jsonContent = await fs.readFile(jsonPath, "utf-8");
-  const whisperOutput: WhisperJsonOutput = JSON.parse(jsonContent);
+  const whisperOutput = parsePythonJson(jsonContent) as WhisperJsonOutput;
 
   const segments: TranscriptSegment[] = whisperOutput.segments.map((seg) => ({
     text: seg.text.trim(),
@@ -439,6 +439,20 @@ async function runWhisper(
 
 export function isTranscriptionInProgress(): boolean {
   return transcriptionInProgress;
+}
+
+/**
+ * Parse JSON written by Python's json module, which emits bare NaN/Infinity
+ * tokens (allow_nan=True) that strict JSON.parse rejects — Whisper does this
+ * for logprob/compression fields on some audio. Strict parse first; on
+ * failure, null out value-position NaN/Infinity tokens and retry.
+ */
+export function parsePythonJson(content: string): unknown {
+  try {
+    return JSON.parse(content);
+  } catch {
+    return JSON.parse(content.replace(/(:\s*|\[\s*|,\s*)(?:-?Infinity|NaN)(?=\s*[,\]}])/g, "$1null"));
+  }
 }
 
 /**
@@ -471,7 +485,7 @@ async function runDiarization(
   });
 
   const jsonContent = await fs.readFile(outputPath, "utf-8");
-  const segments: DiarizationSegment[] = JSON.parse(jsonContent);
+  const segments = parsePythonJson(jsonContent) as DiarizationSegment[];
   console.log(`[whisper] Diarization complete: ${segments.length} speaker segments found`);
   return segments;
 }
