@@ -83,3 +83,6 @@ tmp/email-renders/
 
 # Chrome unpacked dev keypair — never commit
 tsconfig.tsbuildinfo
+
+# Default local export library (runtime output)
+transcript/

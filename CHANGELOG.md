@@ -8,6 +8,7 @@
 
 ### Changed
 
+- **Default export root is now `./transcript/` inside the repo** — new installs write channel exports to `transcript/<Channel Name>/<video>.md` with no configuration (the folder is git-ignored). Existing setups keep their location via `YTT_EXPORT_ROOT`.
 - **App renamed to Transcript Desk** — the UI already carried the name; the package, README, docs, and setup scripts now match. The repository keeps its `youtube-transcriber` URL, and upstream attribution (lifesized/youtube-transcriber) is unchanged.
 - **Repository restructure** — `lib/` is grouped by domain: `lib/sources/` (youtube, spotify, generic-video, url-parser), `lib/transcription/` (whisper, whisper-cloud, transcription-policy, collapse-repair, proofread), `lib/export/` (local-export, export-utils); orchestrators and shared modules stay at `lib/` root. `PRODUCT.md`, `DESIGN.md`, `DESIGN.json` moved into `docs/`; stale `bun.lock` and `skills-lock.json` removed. The health check now creates `tmp/` on demand instead of failing when it is missing.
 

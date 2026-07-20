@@ -26,7 +26,7 @@ If you want the browser extension, hosted mode, or MCP server, use the [original
 ## What it can do
 
 - **Transcribe a single video** — paste any YouTube URL; official captions are fetched when they exist (< 5 sec), otherwise audio is transcribed with Whisper (local by default, cloud optional).
-- **Export a whole channel** — paste a channel URL and get every video as a timestamped Markdown file under `<export root>/<Channel Name>/`, with inventory and summary files. Re-runs skip what's already done; failures can be retried; a running batch can be stopped safely.
+- **Export a whole channel** — paste a channel URL and get every video as a timestamped Markdown file under `transcript/<Channel Name>/` (or your `YTT_EXPORT_ROOT`), with inventory and summary files. Re-runs skip what's already done; failures can be retried; a running batch can be stopped safely.
 - **Repair repetition collapse automatically** — Whisper (especially turbo models) can degenerate into token loops on speech under music beds, losing that content. Collapsed windows are detected and re-transcribed with a stronger model using loop-resistant decoding.
 - **Proofread with an AI agent** — ASR homophone and name errors are fixed by Claude after transcription. Works with an Anthropic API key **or** your local Claude Code CLI (no key needed). The agent is resolved *before* transcription starts, you're told which one will run, and a broken setup automatically falls back to the other available agent.
 - **Access members-only videos** — uses your signed-in Chrome profile for channels you're a member of.
@@ -42,7 +42,7 @@ npm run setup
 npm run dev
 ```
 
-Open [http://localhost:19720](http://localhost:19720), paste a YouTube video or channel URL, and start the export. Transcript files are saved under your export folder (`YTT_EXPORT_ROOT` in `.env`); existing files are skipped automatically when you run the same source again.
+Open [http://localhost:19720](http://localhost:19720), paste a YouTube video or channel URL, and start the export. Transcript files are saved under `transcript/<Channel Name>/` in the repo by default (set `YTT_EXPORT_ROOT` in `.env` to use another folder); existing files are skipped automatically when you run the same source again.
 
 Use Node.js 24 (`.nvmrc` is included). With Homebrew on macOS:
 

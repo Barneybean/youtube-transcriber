@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import {
@@ -19,9 +18,10 @@ import {
 import type { TranscriptSegment } from "../types";
 import { getYtdlpPath } from "../transcription/whisper";
 
+// Default export root: <repo>/transcript/<Channel Name>/<video>.md.
+// Override with YTT_EXPORT_ROOT to keep a library elsewhere.
 const OUTPUT_ROOT =
-  process.env.YTT_EXPORT_ROOT?.trim() ||
-  path.join(os.homedir(), "Desktop", "AI Trading", "Youtube_Transcript");
+  process.env.YTT_EXPORT_ROOT?.trim() || path.join(process.cwd(), "transcript");
 const YTDLP_BROWSER = process.env.YTDLP_BROWSER?.trim() || "chrome:Default";
 
 export type ExportPhase =
