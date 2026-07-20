@@ -19,12 +19,9 @@ import {
 import type { TranscriptSegment } from "@/lib/types";
 import { getYtdlpPath } from "@/lib/whisper";
 
-const OUTPUT_ROOT = path.join(
-  os.homedir(),
-  "Desktop",
-  "AI Trading",
-  "Youtube_Transcript",
-);
+const OUTPUT_ROOT =
+  process.env.YTT_EXPORT_ROOT?.trim() ||
+  path.join(os.homedir(), "Desktop", "AI Trading", "Youtube_Transcript");
 const YTDLP_BROWSER = process.env.YTDLP_BROWSER?.trim() || "chrome:Default";
 
 export type ExportPhase =
