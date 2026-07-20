@@ -16,8 +16,13 @@ import type { TranscriptSegment } from "./types";
  * Config (.env):
  *   ANTHROPIC_API_KEY     enables the feature (uses `ant auth login`
  *                         profile as fallback via the SDK's own resolution)
+ *   PROOFREAD_BACKEND     "claude-cli" routes chunks through the local
+ *                         Claude Code CLI (`claude -p`) instead of the API —
+ *                         no API key needed, uses the CLI's own auth; setting
+ *                         it also enables the feature
+ *   CLAUDE_CLI_PATH       path to the CLI binary (default "claude")
  *   PROOFREAD_ENABLED     "false" to force-disable (default: on when a
- *                         credential resolves)
+ *                         credential resolves or PROOFREAD_BACKEND is set)
  *   PROOFREAD_MODEL       default "claude-opus-4-8"
  *   PROOFREAD_SOURCES     "whisper" (default) = only whisper_* transcripts;
  *                         "all" = also proofread caption scrapes
@@ -31,6 +36,7 @@ export interface ProofreadConfig {
   enabled: boolean;
   model: string;
   sources: "whisper" | "all";
+  backend: "api" | "claude-cli";
 }
 
 export interface ProofreadResult {
@@ -48,13 +54,18 @@ export interface ProofreadContext {
 export function getProofreadConfig(
   env: Record<string, string | undefined> = process.env
 ): ProofreadConfig {
+  const backend = env.PROOFREAD_BACKEND === "claude-cli" ? "claude-cli" : "api";
   const hasCredential = Boolean(
-    env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || env.PROOFREAD_ENABLED === "true"
+    env.ANTHROPIC_API_KEY ||
+      env.ANTHROPIC_AUTH_TOKEN ||
+      backend === "claude-cli" ||
+      env.PROOFREAD_ENABLED === "true"
   );
   return {
     enabled: env.PROOFREAD_ENABLED === "false" ? false : hasCredential,
     model: env.PROOFREAD_MODEL || "claude-opus-4-8",
     sources: env.PROOFREAD_SOURCES === "all" ? "all" : "whisper",
+    backend,
   };
 }
 
@@ -147,6 +158,43 @@ function buildSystemPrompt(context: ProofreadContext): string {
     .join("\n");
 }
 
+/** Extract the first JSON object from CLI text output (tolerates code fences and prose). */
+export function extractJsonObject(raw: string): unknown {
+  const cleaned = raw.replace(/```(?:json)?/g, "");
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end <= start) throw new Error("no JSON object in output");
+  return JSON.parse(cleaned.slice(start, end + 1));
+}
+
+const CLI_TIMEOUT_MS = 180_000;
+
+/** Proofread one chunk through the local Claude Code CLI (`claude -p`). */
+async function proofreadChunkCli(
+  model: string,
+  chunk: TranscriptSegment[],
+  context: ProofreadContext
+): Promise<Correction[]> {
+  const { execFile } = await import("child_process");
+  const cli = process.env.CLAUDE_CLI_PATH?.trim() || "claude";
+  const numbered = chunk.map((s, i) => `${i}: ${s.text}`).join("\n");
+  const prompt =
+    buildSystemPrompt(context) +
+    '\n\nRespond with ONLY a JSON object of the form {"corrections": [{"i": <line index>, "text": "<full corrected line>"}]} and nothing else.' +
+    "\n\nLines:\n" +
+    numbered;
+  const stdout = await new Promise<string>((resolve, reject) => {
+    execFile(
+      cli,
+      ["-p", prompt, "--model", model],
+      { timeout: CLI_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 },
+      (err, out) => (err ? reject(err) : resolve(out))
+    );
+  });
+  const parsed = extractJsonObject(stdout) as { corrections?: Correction[] };
+  return Array.isArray(parsed.corrections) ? parsed.corrections : [];
+}
+
 async function proofreadChunk(
   client: Anthropic,
   model: string,
@@ -182,12 +230,14 @@ export async function proofreadSegments(
     return { segments, proofread: false };
   }
 
-  let client: Anthropic;
-  try {
-    client = new Anthropic();
-  } catch (err) {
-    console.warn(`[proofread] disabled — no credential resolved: ${String(err)}`);
-    return { segments, proofread: false };
+  let client: Anthropic | null = null;
+  if (config.backend === "api") {
+    try {
+      client = new Anthropic();
+    } catch (err) {
+      console.warn(`[proofread] disabled — no credential resolved: ${String(err)}`);
+      return { segments, proofread: false };
+    }
   }
 
   const chunks = chunkSegments(segments);
@@ -208,7 +258,9 @@ export async function proofreadSegments(
     while (next < chunks.length) {
       const idx = next++;
       try {
-        const corrections = await proofreadChunk(client, config.model, chunks[idx], context);
+        const corrections = client
+          ? await proofreadChunk(client, config.model, chunks[idx], context)
+          : await proofreadChunkCli(config.model, chunks[idx], context);
         for (const c of corrections) {
           allCorrections.push({ i: c.i + offsets[idx], text: c.text });
         }
@@ -220,8 +272,9 @@ export async function proofreadSegments(
       onProgress?.(completed / chunks.length);
     }
   }
+  const concurrency = config.backend === "claude-cli" ? 2 : CHUNK_CONCURRENCY;
   await Promise.all(
-    Array.from({ length: Math.min(CHUNK_CONCURRENCY, chunks.length) }, () => worker())
+    Array.from({ length: Math.min(concurrency, chunks.length) }, () => worker())
   );
 
   if (failures === chunks.length) {

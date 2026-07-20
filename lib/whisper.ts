@@ -4,6 +4,11 @@ import os from "os";
 import path from "path";
 import type { TranscriptSegment } from "./types";
 import type { ProgressStage } from "./progress";
+import {
+  detectCollapseWindows,
+  isDegenerateText,
+  spliceRepairedWindows,
+} from "./collapse-repair";
 
 export type ProgressCallback = (event: { stage: ProgressStage; progress: number; statusText: string }) => void;
 
@@ -179,7 +184,8 @@ async function runOpenAiWhisperWithDevice(
   outputDir: string,
   model: string,
   device: string,
-  timeoutMs: number
+  timeoutMs: number,
+  opts: { noCondition?: boolean } = {}
 ): Promise<void> {
   const args = [
     audioPath,
@@ -187,6 +193,9 @@ async function runOpenAiWhisperWithDevice(
     "--output_format", "json",
     "--output_dir", outputDir,
   ];
+  if (opts.noCondition) {
+    args.push("--condition_on_previous_text", "False");
+  }
   if (device !== "cpu") {
     args.push("--device", device);
   }
@@ -213,7 +222,13 @@ function getMlxModelCandidates(model: string): string[] {
   return [...new Set(candidates)];
 }
 
-async function runMlxWhisper(audioPath: string, outputDir: string, model: string, timeoutMs: number): Promise<void> {
+async function runMlxWhisper(
+  audioPath: string,
+  outputDir: string,
+  model: string,
+  timeoutMs: number,
+  opts: { noCondition?: boolean } = {}
+): Promise<void> {
   const jsonPath = expectedJsonPath(audioPath, outputDir);
   const candidates = getMlxModelCandidates(model);
   let lastError = "";
@@ -224,14 +239,16 @@ async function runMlxWhisper(audioPath: string, outputDir: string, model: string
       const script =
         "import json, sys;" +
         "from mlx_whisper import transcribe;" +
-        "audio, model_name, out_path = sys.argv[1:4];" +
-        "res = transcribe(audio, path_or_hf_repo=model_name);" +
+        "audio, model_name, out_path, no_cond = sys.argv[1:5];" +
+        "res = transcribe(audio, path_or_hf_repo=model_name, condition_on_previous_text=(no_cond != '1'));" +
         "f = open(out_path, 'w', encoding='utf-8');" +
         "json.dump({'segments': res.get('segments', [])}, f);" +
         "f.close()";
-      await execFileAsync(PYTHON_BIN, ["-c", script, audioPath, candidate, jsonPath], {
-        timeout: timeoutMs,
-      });
+      await execFileAsync(
+        PYTHON_BIN,
+        ["-c", script, audioPath, candidate, jsonPath, opts.noCondition ? "1" : "0"],
+        { timeout: timeoutMs }
+      );
       await ensureExpectedOutput(audioPath, outputDir, `MLX Whisper (${candidate})`);
       return;
     } catch (err) {
@@ -422,19 +439,117 @@ async function runWhisper(
   const jsonPath = expectedJsonPath(audioPath, outputDir);
 
   const jsonContent = await fs.readFile(jsonPath, "utf-8");
-  const whisperOutput = parsePythonJson(jsonContent) as WhisperJsonOutput;
-
-  const segments: TranscriptSegment[] = whisperOutput.segments.map((seg) => ({
-    text: seg.text.trim(),
-    startMs: Math.round(seg.start * 1000),
-    durationMs: Math.round((seg.end - seg.start) * 1000),
-  }));
+  let segments = parseWhisperSegments(jsonContent);
 
   console.log(
     `[whisper] Transcription complete: ${segments.length} segments, model=${model}, requested_backend=${requestedBackend}, used_backend=${usedBackend}, used_device=${usedDevice}, fallback_reason=${fallbackReason ?? "none"}, wall-clock=${wallTime}s`
   );
 
+  segments = await repairCollapsedWindows(segments, audioPath, outputDir, timeoutMs);
+
   return segments;
+}
+
+function parseWhisperSegments(jsonContent: string): TranscriptSegment[] {
+  const whisperOutput = parsePythonJson(jsonContent) as WhisperJsonOutput;
+  return whisperOutput.segments.map((seg) => ({
+    text: seg.text.trim(),
+    startMs: Math.round(seg.start * 1000),
+    durationMs: Math.round((seg.end - seg.start) * 1000),
+  }));
+}
+
+const FFMPEG_PATH = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
+
+function getRepairModel(): string {
+  return process.env.WHISPER_REPAIR_MODEL?.trim() || "large-v3";
+}
+
+function isRepairEnabled(): boolean {
+  return process.env.WHISPER_REPAIR_ENABLED?.trim().toLowerCase() !== "false";
+}
+
+function msToClock(ms: number): string {
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** Re-transcribe one audio slice with the repair model and loop-resistant decoding. */
+async function transcribeSliceForRepair(
+  slicePath: string,
+  sliceDir: string,
+  timeoutMs: number
+): Promise<TranscriptSegment[]> {
+  const model = getRepairModel();
+  const mlxAvailable = getWhisperBackend() === "mlx" && (await isMlxWhisperAvailable());
+  if (mlxAvailable) {
+    await runMlxWhisper(slicePath, sliceDir, model, timeoutMs, { noCondition: true });
+  } else {
+    await runOpenAiWhisperWithDevice(slicePath, sliceDir, model, "cpu", timeoutMs, {
+      noCondition: true,
+    });
+  }
+  const jsonContent = await fs.readFile(expectedJsonPath(slicePath, sliceDir), "utf-8");
+  return parseWhisperSegments(jsonContent);
+}
+
+/**
+ * Detect decoder repetition collapse (speech under music beds turns into
+ * "improvement improvement…" loops) and re-transcribe just those windows
+ * with the stronger repair model. Fail-open: any repair error keeps the
+ * window's original segments.
+ */
+async function repairCollapsedWindows(
+  segments: TranscriptSegment[],
+  audioPath: string,
+  outputDir: string,
+  timeoutMs: number
+): Promise<TranscriptSegment[]> {
+  if (!isRepairEnabled()) return segments;
+  const windows = detectCollapseWindows(segments);
+  if (windows.length === 0) return segments;
+
+  console.log(
+    `[whisper] Detected ${windows.length} collapsed window(s) — re-transcribing with "${getRepairModel()}": ` +
+      windows.map((w) => `${msToClock(w.startMs)}-${msToClock(w.endMs)}`).join(", ")
+  );
+
+  const replacements: Array<TranscriptSegment[] | null> = [];
+  for (let w = 0; w < windows.length; w++) {
+    const win = windows[w];
+    const sliceDir = path.join(outputDir, `repair-${w}`);
+    try {
+      await fs.mkdir(sliceDir, { recursive: true });
+      const slicePath = path.join(sliceDir, `slice-${w}.wav`);
+      await execFileAsync(
+        FFMPEG_PATH,
+        ["-y", "-loglevel", "error", "-i", audioPath,
+         "-ss", (win.startMs / 1000).toFixed(3), "-to", (win.endMs / 1000).toFixed(3),
+         slicePath],
+        { timeout: 120000 }
+      );
+      const repaired = await transcribeSliceForRepair(slicePath, sliceDir, timeoutMs);
+      // Shift to absolute time; drop anything still degenerate (pure music).
+      const shifted = repaired
+        .map((s) => ({ ...s, startMs: s.startMs + win.startMs }))
+        .filter((s) => s.text.trim() !== "" && !isDegenerateText(s.text));
+      replacements.push(shifted);
+      console.log(
+        `[whisper] Repaired ${msToClock(win.startMs)}-${msToClock(win.endMs)}: ` +
+          `${win.lastIndex - win.firstIndex + 1} collapsed segment(s) -> ${shifted.length} segment(s)`
+      );
+    } catch (err) {
+      replacements.push(null);
+      console.warn(
+        `[whisper] Repair failed for ${msToClock(win.startMs)}-${msToClock(win.endMs)} ` +
+          `(${err instanceof Error ? err.message : String(err)}); keeping original segments`
+      );
+    } finally {
+      await fs.rm(sliceDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  return spliceRepairedWindows(segments, windows, replacements);
 }
 
 export function isTranscriptionInProgress(): boolean {

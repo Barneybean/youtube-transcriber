@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   applyCorrections,
   chunkSegments,
+  extractJsonObject,
   getProofreadConfig,
   proofreadSegments,
   shouldProofread,
@@ -99,4 +100,20 @@ test("proofreadSegments is a no-op when disabled — no network, segments unchan
   const result = await proofreadSegments(segments, {}, getProofreadConfig({}));
   assert.equal(result.proofread, false);
   assert.equal(result.segments, segments);
+});
+
+test("PROOFREAD_BACKEND=claude-cli enables the feature without an API key", () => {
+  const cfg = getProofreadConfig({ PROOFREAD_BACKEND: "claude-cli" });
+  assert.equal(cfg.enabled, true);
+  assert.equal(cfg.backend, "claude-cli");
+  const off = getProofreadConfig({ PROOFREAD_BACKEND: "claude-cli", PROOFREAD_ENABLED: "false" });
+  assert.equal(off.enabled, false);
+  assert.equal(getProofreadConfig({ ANTHROPIC_API_KEY: "k" }).backend, "api");
+});
+
+test("extractJsonObject tolerates fences and prose around the JSON", () => {
+  const wrapped = 'Here you go:\n```json\n{"corrections": [{"i": 2, "text": "木头姐说"}]}\n```\nDone.';
+  assert.deepEqual(extractJsonObject(wrapped), { corrections: [{ i: 2, text: "木头姐说" }] });
+  assert.deepEqual(extractJsonObject('{"corrections": []}'), { corrections: [] });
+  assert.throws(() => extractJsonObject("no json here"));
 });

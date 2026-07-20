@@ -50,7 +50,8 @@ Works fully offline by default. Cloud Whisper is optional — bring your own API
 - **Checkpointed batch resume** — reuse stored transcripts, skip completed files, retry failures, and stop safely after the current video
 - **Local + cloud transcription** — free local Whisper by default, with optional OpenAI, Groq, OpenRouter, or custom endpoints
 - **Multi-language captions** — request captions in any language YouTube supports (see [Language Preference](#language-preference) below)
-- **Optional AI proofreading** — fix ASR errors in Whisper output with an LLM pass (bring your own Anthropic API key)
+- **Repetition-collapse repair** — when Whisper degenerates into token loops on music-heavy passages (channel intros, montage clips), the affected windows are automatically re-transcribed with a stronger model and loop-resistant decoding
+- **Optional AI proofreading** — fix ASR errors in Whisper output with a Claude pass: bring your own Anthropic API key, or set `PROOFREAD_BACKEND="claude-cli"` to use your local Claude Code CLI with no key at all
 - **Duplicate detection** — same video won't be saved twice
 - **Speaker diarization** — optional speaker identification with pyannote.audio
 - **SQLite storage** — all data stays on your machine

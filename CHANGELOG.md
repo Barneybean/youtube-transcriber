@@ -2,6 +2,15 @@
 
 ## 2026-07-19
 
+### Added
+
+- **Repetition-collapse repair** (`lib/collapse-repair.ts`) — Whisper (especially turbo models) can collapse into degenerate loops on speech under music beds ("improvement improvement …", runs of identical segments), losing that window's content entirely. Collapsed windows are now detected after transcription and re-transcribed automatically with a stronger model (`WHISPER_REPAIR_MODEL`, default `large-v3`) using loop-resistant decoding; still-degenerate output (pure music) is dropped instead of kept. On by default; `WHISPER_REPAIR_ENABLED="false"` to disable. Requires ffmpeg.
+- **Claude Code CLI proofread backend** — `PROOFREAD_BACKEND="claude-cli"` routes the AI proofread pass through the local `claude -p` CLI instead of the Anthropic API: no API key needed, uses the CLI's own authentication and plan. Setting it enables proofreading; `CLAUDE_CLI_PATH` overrides the binary path.
+
+### Fixed
+
+- **Local Whisper JSON parse failure on bare `NaN` logprobs** — Python's json module emits bare `NaN`/`Infinity` tokens that strict `JSON.parse` rejects, so a completed transcription could still fail at the parse step. Whisper and diarization output now goes through a lenient parser that nulls value-position `NaN`/`Infinity` tokens on retry.
+
 ### Removed
 
 - **Chrome extension** (`extension/`, native messaging host, related npm scripts) — the fork is now local-app-only.
