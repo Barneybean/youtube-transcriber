@@ -19,7 +19,22 @@
     "fresh": "tsx scripts/fresh.ts",
     "test:setup": "bash scripts/test-setup.sh"
   },
-  "keywords": [],
+  "keywords": [
+    "youtube",
+    "transcript",
+    "transcription",
+    "whisper",
+    "speech-to-text",
+    "youtube-transcript",
+    "yt-dlp",
+    "markdown",
+    "subtitles",
+    "captions",
+    "ai",
+    "claude",
+    "local-first",
+    "mlx"
+  ],
   "author": "",
   "license": "AGPL-3.0-or-later",
   "dependencies": {
@@ -45,5 +60,6 @@
     "tailwindcss": "^4.1.18",
     "tsx": "^4.19.2",
     "typescript": "5.9.3"
-  }
+  },
+  "description": "Free local YouTube transcript generator: convert videos and whole channels to timestamped Markdown with captions, Whisper speech-to-text, and AI proofreading."
 }

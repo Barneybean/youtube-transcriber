@@ -4,7 +4,7 @@
 
 **YouTube research to organized local Markdown in one click. Runs locally, costs nothing.**
 
-Paste a YouTube video or channel URL and get timestamped Markdown transcripts on disk, organized by channel. Built for research workflows where the files — not a web library — are the product.
+A free, open-source **YouTube transcript generator**: paste a video or channel URL and get timestamped Markdown transcripts on disk, organized by channel. Convert YouTube to text with official captions or Whisper speech-to-text, batch-download transcripts for an entire channel, and keep everything searchable, private, and local. Built for research workflows where the files — not a web library — are the product.
 
 | | |
 |---|---|
@@ -199,6 +199,26 @@ Install `yt-dlp` and `ffmpeg` with your package manager, then `npm run test:setu
 - Disable VPN if you're getting consistent 403 errors
 
 </details>
+
+## FAQ
+
+**How do I get the transcript of a YouTube video?**
+Run the app (`npm run dev`), open `localhost:19720`, paste the video URL, and click start — or `POST /api/transcripts` from a script. Videos with captions finish in seconds; anything else is transcribed with Whisper.
+
+**Can I transcribe an entire YouTube channel at once?**
+Yes — paste the channel URL (optionally filtered by year). Every video becomes a Markdown file under `transcript/<Channel Name>/`, and re-runs skip what's already done, so you can top up a channel any time.
+
+**Is it free? Do I need an API key?**
+Free and open source. Local Whisper needs no key or account. Cloud speedups (Groq's free tier, OpenAI) and AI proofreading via the Anthropic API are optional bring-your-own-key extras — and proofreading also works keyless through a local Claude Code CLI.
+
+**Does it work on videos without captions or subtitles?**
+Yes — that's the point of the Whisper fallback. No captions means the audio is downloaded with yt-dlp and transcribed locally (MLX-accelerated on Apple Silicon), with automatic repair when the model garbles music-heavy passages.
+
+**What languages does it support?**
+Any language YouTube or Whisper supports. Set a caption priority list like `zh-Hans,zh-Hant,en` and the first available wins; Whisper auto-detects the spoken language.
+
+**Is my data private?**
+Everything runs on your machine: SQLite database, local Markdown files, local Whisper. Nothing is uploaded unless you opt into a cloud provider.
 
 ## Contributing
 
