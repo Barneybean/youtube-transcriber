@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 YouTube Transcriber Setup"
+echo "🚀 Transcript Desk Setup"
 echo "=============================="
 echo ""
 

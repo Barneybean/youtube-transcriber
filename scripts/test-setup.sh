@@ -1,6 +1,6 @@
 #!/bin/bash
 # --------------------------------------------------------------------------
-# YouTube Transcriber — Post-Setup Verification (YTT-83)
+# Transcript Desk — Post-Setup Verification (YTT-83)
 #
 # Checks that every dependency is installed and configured correctly.
 # Run after setup or any time something feels broken:
@@ -20,7 +20,7 @@ fail() { FAIL=$((FAIL + 1)); echo "  [FAIL] $1"; }
 warn() { WARN=$((WARN + 1)); echo "  [WARN] $1"; }
 
 echo ""
-echo "YouTube Transcriber — Setup Verification"
+echo "Transcript Desk — Setup Verification"
 echo "=========================================="
 echo ""
 

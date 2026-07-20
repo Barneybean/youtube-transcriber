@@ -1,14 +1,14 @@
-# YouTube Transcriber
+# Transcript Desk
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
-**YouTube research to organized local Markdown in one click. Runs locally, costs nothing.**
+**Transcript Desk — YouTube research to organized local Markdown in one click. Runs locally, costs nothing.**
 
 Paste a YouTube video or channel URL and get timestamped Markdown transcripts on disk, organized by channel. Built for research workflows where the files — not a web library — are the product.
 
 ## About this fork
 
-This is a **fork and customization of [lifesized/youtube-transcriber](https://github.com/lifesized/youtube-transcriber)** by [lifesized](https://github.com/lifesized), simplified to the essential local file-first workflow. In accordance with the **GNU AGPL v3** license of the original project, this fork:
+Transcript Desk is a **fork and customization of [lifesized/youtube-transcriber](https://github.com/lifesized/youtube-transcriber)** by [lifesized](https://github.com/lifesized), simplified to the essential local file-first workflow. In accordance with the **GNU AGPL v3** license of the original project, this fork:
 
 - is distributed under the **same AGPL-3.0 license** ([LICENSE](./LICENSE), original copyright retained);
 - publishes its **complete modified source** in this repository;

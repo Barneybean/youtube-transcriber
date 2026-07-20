@@ -1,4 +1,4 @@
-# Project: YouTube Transcriber
+# Project: Transcript Desk
 
 Next.js 15 app — local YouTube transcription via Whisper + yt-dlp. Runs at `localhost:19720`.
 

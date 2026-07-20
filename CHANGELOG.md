@@ -8,6 +8,7 @@
 
 ### Changed
 
+- **App renamed to Transcript Desk** — the UI already carried the name; the package, README, docs, and setup scripts now match. The repository keeps its `youtube-transcriber` URL, and upstream attribution (lifesized/youtube-transcriber) is unchanged.
 - **Repository restructure** — `lib/` is grouped by domain: `lib/sources/` (youtube, spotify, generic-video, url-parser), `lib/transcription/` (whisper, whisper-cloud, transcription-policy, collapse-repair, proofread), `lib/export/` (local-export, export-utils); orchestrators and shared modules stay at `lib/` root. `PRODUCT.md`, `DESIGN.md`, `DESIGN.json` moved into `docs/`; stale `bun.lock` and `skills-lock.json` removed. The health check now creates `tmp/` on demand instead of failing when it is missing.
 
 - **Repetition-collapse repair** (`lib/collapse-repair.ts`) — Whisper (especially turbo models) can collapse into degenerate loops on speech under music beds ("improvement improvement …", runs of identical segments), losing that window's content entirely. Collapsed windows are now detected after transcription and re-transcribed automatically with a stronger model (`WHISPER_REPAIR_MODEL`, default `large-v3`) using loop-resistant decoding; still-degenerate output (pure music) is dropped instead of kept. On by default; `WHISPER_REPAIR_ENABLED="false"` to disable. Requires ffmpeg.

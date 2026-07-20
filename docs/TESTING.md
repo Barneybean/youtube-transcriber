@@ -1,6 +1,6 @@
 # Test Protocol
 
-YouTube Transcriber has a multi-layer test protocol designed to catch environment and configuration issues across different deployment modes.
+Transcript Desk has a multi-layer test protocol designed to catch environment and configuration issues across different deployment modes.
 
 ## The Problem
 

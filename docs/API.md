@@ -1,4 +1,4 @@
-# YouTube Transcriber API
+# Transcript Desk API
 
 Base URL: `http://127.0.0.1:19720`
 
