@@ -38,7 +38,7 @@ fs.writeFileSync(outputPath, "authenticated audio");
   process.env.YTDLP_PATH = fakeYtdlpPath;
   process.env.YTDLP_BROWSER = "chrome:Default";
   process.env.YTDLP_TEST_LOG = logPath;
-  const { downloadAudio } = await import("../lib/whisper.js");
+  const { downloadAudio } = await import("../lib/transcription/whisper.js");
 
   const audioPath = await downloadAudio("abc123def45", outputDir);
 

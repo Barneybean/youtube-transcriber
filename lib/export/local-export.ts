@@ -8,16 +8,16 @@ import {
   buildTranscriptFilename,
   renderTranscriptMarkdown,
   safePathSegment,
-} from "@/lib/export-utils";
-import { prisma } from "@/lib/prisma";
-import { transcriptionProgress, type ProgressEvent } from "@/lib/progress";
-import { getVideoTranscript } from "@/lib/transcript";
+} from "./export-utils";
+import { prisma } from "../prisma";
+import { transcriptionProgress, type ProgressEvent } from "../progress";
+import { getVideoTranscript } from "../transcript";
 import {
   addTranscriptionSourceMetadata,
   formatTranscriptionSource,
-} from "@/lib/transcription-policy";
-import type { TranscriptSegment } from "@/lib/types";
-import { getYtdlpPath } from "@/lib/whisper";
+} from "../transcription/transcription-policy";
+import type { TranscriptSegment } from "../types";
+import { getYtdlpPath } from "../transcription/whisper";
 
 const OUTPUT_ROOT =
   process.env.YTT_EXPORT_ROOT?.trim() ||

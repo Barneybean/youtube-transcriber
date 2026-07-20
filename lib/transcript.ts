@@ -3,16 +3,21 @@ import os from "os";
 import { promises as fs } from "fs";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { extractVideoId } from "./youtube";
-import { parseContentUrl } from "./url-parser";
-import { getSpotifyTranscript } from "./spotify";
-import { getGenericTranscript } from "./generic-video";
-import { transcribeWithWhisper, downloadAudio, type ProgressCallback, getYtdlpPath, getWhisperModel } from "./whisper";
-import { transcribeWithCloudWhisper, getCloudWhisperConfig } from "./whisper-cloud";
+import { extractVideoId } from "./sources/youtube";
+import { parseContentUrl } from "./sources/url-parser";
+import { getSpotifyTranscript } from "./sources/spotify";
+import { getGenericTranscript } from "./sources/generic-video";
+import { transcribeWithWhisper, downloadAudio, type ProgressCallback, getYtdlpPath, getWhisperModel } from "./transcription/whisper";
+import { transcribeWithCloudWhisper, getCloudWhisperConfig } from "./transcription/whisper-cloud";
 import { isWhisperEnabled, getWhisperPriority, getEnabledProviders, transcribeWithProvider } from "./providers";
 import { transcriptionProgress } from "./progress";
-import { buildAudioFallbackOrder } from "./transcription-policy";
-import { proofreadSegments, getProofreadConfig, shouldProofread } from "./proofread";
+import { buildAudioFallbackOrder } from "./transcription/transcription-policy";
+import {
+  getProofreadConfig,
+  preflightProofread,
+  proofreadSegments,
+  shouldProofread,
+} from "./transcription/proofread";
 
 const execFileAsync = promisify(execFile);
 import type {
@@ -878,6 +883,17 @@ async function fetchTranscript(
     console.log(
       `[transcript] All caption methods failed for ${videoId}, falling back to audio transcription...`
     );
+    // Resolve the proofreading agent BEFORE transcribing: tell the user which
+    // agent will proofread, and repair a broken setup up front (fall back to
+    // the other available agent) instead of failing silently after Whisper.
+    const preflight = await preflightProofread();
+    console.log(`[proofread] ${preflight.notice}`);
+    transcriptionProgress.emit("progress", {
+      stage: "transcribing",
+      progress: 32,
+      statusText: preflight.notice,
+      videoId,
+    });
     return await transcribeAudioFallback(videoId);
   }
 }
@@ -951,13 +967,17 @@ async function withProofreading<T extends VideoTranscriptResult & { source: stri
   result: T,
   videoId?: string
 ): Promise<T> {
-  const config = getProofreadConfig();
-  if (!shouldProofread(result.source, config)) return result;
+  if (!shouldProofread(result.source, getProofreadConfig())) return result;
+  const preflight = await preflightProofread();
+  if (!preflight.active) return result;
+  const config = preflight.config;
 
+  const agentLabel =
+    config.backend === "claude-cli" ? "the local Claude agent" : "the Anthropic API";
   transcriptionProgress.emit("progress", {
     stage: "transcribing",
     progress: 90,
-    statusText: "Proofreading transcript with AI...",
+    statusText: `Proofreading transcript with ${agentLabel}...`,
     videoId,
   });
 
@@ -969,7 +989,7 @@ async function withProofreading<T extends VideoTranscriptResult & { source: stri
       transcriptionProgress.emit("progress", {
         stage: "transcribing",
         progress: Math.round(90 + fraction * 9),
-        statusText: "Proofreading transcript with AI...",
+        statusText: `Proofreading transcript with ${agentLabel}...`,
         videoId,
       });
     }

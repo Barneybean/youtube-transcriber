@@ -41,7 +41,7 @@ fs.writeFileSync(outputPath, "fake audio");
 
   process.env.YTDLP_PATH = fakeYtdlpPath;
   process.env.YTDLP_TEST_LOG = logPath;
-  const { downloadAudio } = await import("../lib/whisper.js");
+  const { downloadAudio } = await import("../lib/transcription/whisper.js");
 
   const audioPath = await downloadAudio("UIEzt1gGCmk", outputDir);
 

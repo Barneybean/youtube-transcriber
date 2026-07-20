@@ -5,7 +5,7 @@ import {
   detectCollapseWindows,
   isDegenerateText,
   spliceRepairedWindows,
-} from "../lib/collapse-repair.js";
+} from "../lib/transcription/collapse-repair.js";
 import type { TranscriptSegment } from "../lib/types.js";
 
 function seg(startMs: number, durationMs: number, text: string): TranscriptSegment {

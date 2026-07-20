@@ -5,7 +5,7 @@ import {
   addTranscriptionSourceMetadata,
   buildAudioFallbackOrder,
   formatTranscriptionSource,
-} from "../lib/transcription-policy.js";
+} from "../lib/transcription/transcription-policy.js";
 
 test("pins Groq then OpenAI before the configured audio fallback order", () => {
   const providers = [

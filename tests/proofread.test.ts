@@ -6,9 +6,11 @@ import {
   chunkSegments,
   extractJsonObject,
   getProofreadConfig,
+  clearPreflightCache,
+  preflightProofread,
   proofreadSegments,
   shouldProofread,
-} from "../lib/proofread.js";
+} from "../lib/transcription/proofread.js";
 import type { TranscriptSegment } from "../lib/types.js";
 
 function seg(text: string, startMs = 0): TranscriptSegment {
@@ -116,4 +118,57 @@ test("extractJsonObject tolerates fences and prose around the JSON", () => {
   assert.deepEqual(extractJsonObject(wrapped), { corrections: [{ i: 2, text: "木头姐说" }] });
   assert.deepEqual(extractJsonObject('{"corrections": []}'), { corrections: [] });
   assert.throws(() => extractJsonObject("no json here"));
+});
+
+test("preflight: healthy claude-cli backend stays active with a notice", async () => {
+  clearPreflightCache();
+  const cfg = getProofreadConfig({ PROOFREAD_BACKEND: "claude-cli" });
+  const pf = await preflightProofread(cfg, async () => ({ ok: true, detail: "2.x" }));
+  assert.equal(pf.active, true);
+  assert.equal(pf.repaired, false);
+  assert.equal(pf.config.backend, "claude-cli");
+  assert.match(pf.notice, /local Claude agent/);
+});
+
+test("preflight: broken claude-cli falls back to the API when a key exists", async () => {
+  clearPreflightCache();
+  const prev = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+  try {
+    const cfg = getProofreadConfig({ PROOFREAD_BACKEND: "claude-cli" });
+    const pf = await preflightProofread(cfg, async () => ({ ok: false, detail: "not found" }));
+    assert.equal(pf.active, true);
+    assert.equal(pf.repaired, true);
+    assert.equal(pf.config.backend, "api");
+    assert.match(pf.notice, /Anthropic API instead/);
+  } finally {
+    if (prev === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = prev;
+  }
+});
+
+test("preflight: broken claude-cli with no key disables with a clear notice", async () => {
+  clearPreflightCache();
+  const prevKey = process.env.ANTHROPIC_API_KEY;
+  const prevTok = process.env.ANTHROPIC_AUTH_TOKEN;
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_AUTH_TOKEN;
+  try {
+    const cfg = getProofreadConfig({ PROOFREAD_BACKEND: "claude-cli" });
+    const pf = await preflightProofread(cfg, async () => ({ ok: false, detail: "not found" }));
+    assert.equal(pf.active, false);
+    assert.equal(pf.config.enabled, false);
+    assert.match(pf.notice, /disabled/);
+    assert.match(pf.notice, /not found/);
+  } finally {
+    if (prevKey !== undefined) process.env.ANTHROPIC_API_KEY = prevKey;
+    if (prevTok !== undefined) process.env.ANTHROPIC_AUTH_TOKEN = prevTok;
+  }
+});
+
+test("preflight: disabled config reports how to enable", async () => {
+  clearPreflightCache();
+  const pf = await preflightProofread(getProofreadConfig({}), async () => ({ ok: true, detail: "" }));
+  assert.equal(pf.active, false);
+  assert.match(pf.notice, /off/);
 });

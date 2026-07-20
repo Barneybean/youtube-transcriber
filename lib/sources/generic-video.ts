@@ -2,10 +2,10 @@ import path from "path";
 import { promises as fs } from "fs";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import type { TranscriptSegment, VideoMetadata, VideoTranscriptResult } from "./types";
-import { transcriptionProgress } from "./progress";
-import { isWhisperEnabled, getWhisperPriority, getEnabledProviders, transcribeWithProvider } from "./providers";
-import { transcribeAudioFileWithWhisper, getYtdlpPath, getWhisperModel } from "./whisper";
+import type { TranscriptSegment, VideoMetadata, VideoTranscriptResult } from "../types";
+import { transcriptionProgress } from "../progress";
+import { isWhisperEnabled, getWhisperPriority, getEnabledProviders, transcribeWithProvider } from "../providers";
+import { transcribeAudioFileWithWhisper, getYtdlpPath, getWhisperModel } from "../transcription/whisper";
 
 const execFileAsync = promisify(execFile);
 const FFMPEG_PATH = process.env.FFMPEG_PATH?.trim() || "ffmpeg";

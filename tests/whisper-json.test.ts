@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parsePythonJson } from "../lib/whisper.js";
+import { parsePythonJson } from "../lib/transcription/whisper.js";
 
 test("parses whisper JSON containing bare NaN logprobs", () => {
   const raw =

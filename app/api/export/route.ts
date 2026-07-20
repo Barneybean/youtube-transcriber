@@ -5,7 +5,7 @@ import {
   getExportJob,
   getOutputRoot,
   startExportJob,
-} from "@/lib/local-export";
+} from "@/lib/export/local-export";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

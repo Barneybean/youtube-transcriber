@@ -1,4 +1,4 @@
-import type { TranscriptSegment } from "./types";
+import type { TranscriptSegment } from "../types";
 
 /**
  * Detection and repair planning for Whisper decoder repetition collapse.

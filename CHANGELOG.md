@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Proofread agent preflight** — before audio transcription starts, the app resolves which AI agent will proofread (local Claude CLI or Anthropic API), announces it in the progress stream, and repairs a broken setup up front by falling back to the other available agent; when neither is available it says so and transcribes without proofreading. The `/api/transcripts` response includes the resulting `proofreadNotice`.
+
+### Changed
+
+- **Repository restructure** — `lib/` is grouped by domain: `lib/sources/` (youtube, spotify, generic-video, url-parser), `lib/transcription/` (whisper, whisper-cloud, transcription-policy, collapse-repair, proofread), `lib/export/` (local-export, export-utils); orchestrators and shared modules stay at `lib/` root. `PRODUCT.md`, `DESIGN.md`, `DESIGN.json` moved into `docs/`; stale `bun.lock` and `skills-lock.json` removed. The health check now creates `tmp/` on demand instead of failing when it is missing.
+
 - **Repetition-collapse repair** (`lib/collapse-repair.ts`) — Whisper (especially turbo models) can collapse into degenerate loops on speech under music beds ("improvement improvement …", runs of identical segments), losing that window's content entirely. Collapsed windows are now detected after transcription and re-transcribed automatically with a stronger model (`WHISPER_REPAIR_MODEL`, default `large-v3`) using loop-resistant decoding; still-degenerate output (pure music) is dropped instead of kept. On by default; `WHISPER_REPAIR_ENABLED="false"` to disable. Requires ffmpeg.
 - **Claude Code CLI proofread backend** — `PROOFREAD_BACKEND="claude-cli"` routes the AI proofread pass through the local `claude -p` CLI instead of the Anthropic API: no API key needed, uses the CLI's own authentication and plan. Setting it enables proofreading; `CLAUDE_CLI_PATH` overrides the binary path.
 

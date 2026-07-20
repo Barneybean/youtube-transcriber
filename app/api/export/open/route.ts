@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { openExportFolder } from "@/lib/local-export";
+import { openExportFolder } from "@/lib/export/local-export";
 
 export const runtime = "nodejs";
 

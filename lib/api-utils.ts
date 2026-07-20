@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "./prisma";
 
 /**
  * Fetches a video by ID or returns a 404 response if not found.

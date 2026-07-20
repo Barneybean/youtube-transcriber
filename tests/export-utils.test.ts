@@ -5,7 +5,7 @@ import {
   buildTranscriptFilename,
   renderTranscriptMarkdown,
   safePathSegment,
-} from "../lib/export-utils.js";
+} from "../lib/export/export-utils.js";
 
 test("safePathSegment keeps channel names readable while removing path syntax", () => {
   assert.equal(

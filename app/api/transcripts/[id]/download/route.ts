@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { formatTranscriptionSource } from "@/lib/transcription-policy";
+import { formatTranscriptionSource } from "@/lib/transcription/transcription-policy";
 import type { TranscriptSegment } from "@/lib/types";
 
 function formatTimestamp(ms: number): string {

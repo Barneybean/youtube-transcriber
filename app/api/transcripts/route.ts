@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { parseContentUrl } from "@/lib/url-parser";
+import { parseContentUrl } from "@/lib/sources/url-parser";
 import {
   getVideoTranscript,
   fetchMetadata,
@@ -8,7 +8,8 @@ import {
   BotDetectionError,
   NoCaptionsError,
 } from "@/lib/transcript";
-import { isTranscriptionInProgress } from "@/lib/whisper";
+import { isTranscriptionInProgress } from "@/lib/transcription/whisper";
+import { preflightProofread } from "@/lib/transcription/proofread";
 
 type ClientSegment = { start: number; duration?: number; text: string };
 
@@ -133,7 +134,16 @@ export async function POST(request: NextRequest) {
       ? await prisma.video.update({ where: { videoId }, data })
       : await prisma.video.create({ data });
 
-    return NextResponse.json(video, { status: existing ? 200 : 201 });
+    // Tell the caller which AI agent (if any) proofread this transcript —
+    // cached preflight, resolved before transcription started.
+    const proofreadNotice = result.source.startsWith("whisper")
+      ? (await preflightProofread()).notice
+      : undefined;
+
+    return NextResponse.json(
+      { ...video, ...(proofreadNotice ? { proofreadNotice } : {}) },
+      { status: existing ? 200 : 201 }
+    );
   } catch (err: unknown) {
     if (err instanceof RateLimitError) {
       return NextResponse.json(

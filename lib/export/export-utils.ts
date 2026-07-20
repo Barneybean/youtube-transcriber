@@ -1,6 +1,6 @@
-import type { TranscriptSegment } from "@/lib/types";
-import { formatTranscriptionSource } from "@/lib/transcription-policy";
-import { formatTimestamp } from "@/lib/utils";
+import type { TranscriptSegment } from "../types";
+import { formatTranscriptionSource } from "../transcription/transcription-policy";
+import { formatTimestamp } from "../utils";
 
 const INVALID_PATH_CHARS = /[<>:"/\\|?*\u0000-\u001f]/g;
 

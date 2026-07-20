@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { addTranscriptionSourceMetadata } from "../lib/transcription-policy.js";
+import { addTranscriptionSourceMetadata } from "../lib/transcription/transcription-policy.js";
 
 const execFileAsync = promisify(execFile);
 

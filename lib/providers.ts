@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import { sendCloudTranscription, trackGroqUsage, getCloudWhisperConfig } from "./whisper-cloud";
+import { sendCloudTranscription, trackGroqUsage, getCloudWhisperConfig } from "./transcription/whisper-cloud";
 import type { TranscriptSegment } from "./types";
 
 // ---------------------------------------------------------------------------

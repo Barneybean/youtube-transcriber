@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { TranscriptSegment } from "./types";
+import type { TranscriptSegment } from "../types";
 
 /**
  * AI proofreading pass for ASR transcripts.
@@ -156,6 +156,126 @@ function buildSystemPrompt(context: ProofreadContext): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+export interface ProofreadPreflight {
+  /** Whether proofreading will actually run. */
+  active: boolean;
+  /** The resolved config to use — may differ from the requested one after a repair. */
+  config: ProofreadConfig;
+  /** True when the configured agent was broken and another available one was substituted. */
+  repaired: boolean;
+  /** Human-readable line for the UI / API consumers. */
+  notice: string;
+}
+
+export type AgentProbe = () => Promise<{ ok: boolean; detail: string }>;
+
+/** Cheap availability check for the local Claude Code CLI (no model call). */
+async function probeClaudeCli(): Promise<{ ok: boolean; detail: string }> {
+  const { execFile } = await import("child_process");
+  const cli = process.env.CLAUDE_CLI_PATH?.trim() || "claude";
+  return new Promise((resolve) => {
+    execFile(cli, ["--version"], { timeout: 8000 }, (err, out) => {
+      if (!err) return resolve({ ok: true, detail: String(out).trim() });
+      const code = (err as NodeJS.ErrnoException).code;
+      resolve({
+        ok: false,
+        detail: code === "ENOENT" ? `"${cli}" not found on PATH` : String(err).slice(0, 160),
+      });
+    });
+  });
+}
+
+function hasApiCredential(env: Record<string, string | undefined> = process.env): boolean {
+  return Boolean(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN);
+}
+
+let preflightCache: { result: ProofreadPreflight; at: number } | null = null;
+const PREFLIGHT_TTL_MS = 5 * 60_000;
+
+export function clearPreflightCache(): void {
+  preflightCache = null;
+}
+
+/**
+ * Resolve which AI agent (if any) will proofread, BEFORE transcription starts,
+ * so the user is told up front and a broken configuration is repaired rather
+ * than failing silently mid-run. Repair order: the configured backend first,
+ * then whichever other agent is available (local Claude CLI <-> Anthropic API).
+ * Cached briefly so batch exports don't re-probe per video.
+ */
+export async function preflightProofread(
+  config: ProofreadConfig = getProofreadConfig(),
+  probe: AgentProbe = probeClaudeCli
+): Promise<ProofreadPreflight> {
+  const cacheable = probe === probeClaudeCli;
+  if (cacheable && preflightCache && Date.now() - preflightCache.at < PREFLIGHT_TTL_MS) {
+    return preflightCache.result;
+  }
+
+  let result: ProofreadPreflight;
+  if (!config.enabled) {
+    result = {
+      active: false,
+      config,
+      repaired: false,
+      notice:
+        'AI proofreading is off — set ANTHROPIC_API_KEY or PROOFREAD_BACKEND="claude-cli" to enable it.',
+    };
+  } else if (config.backend === "claude-cli") {
+    const cli = await probe();
+    if (cli.ok) {
+      result = {
+        active: true,
+        config,
+        repaired: false,
+        notice: `AI proofreading will use the local Claude agent (${config.model}).`,
+      };
+    } else if (hasApiCredential()) {
+      result = {
+        active: true,
+        config: { ...config, backend: "api" },
+        repaired: true,
+        notice: `Local Claude agent unavailable (${cli.detail}) — proofreading will use the Anthropic API instead.`,
+      };
+    } else {
+      result = {
+        active: false,
+        config: { ...config, enabled: false },
+        repaired: false,
+        notice: `AI proofreading disabled — local Claude agent unavailable (${cli.detail}) and no API credential. Transcribing without it.`,
+      };
+    }
+  } else if (hasApiCredential()) {
+    result = {
+      active: true,
+      config,
+      repaired: false,
+      notice: `AI proofreading will use the Anthropic API (${config.model}).`,
+    };
+  } else {
+    const cli = await probe();
+    if (cli.ok) {
+      result = {
+        active: true,
+        config: { ...config, backend: "claude-cli" },
+        repaired: true,
+        notice:
+          "No Anthropic API credential — proofreading will use the local Claude agent instead.",
+      };
+    } else {
+      result = {
+        active: false,
+        config: { ...config, enabled: false },
+        repaired: false,
+        notice: `AI proofreading disabled — no API credential and no local Claude agent (${cli.detail}).`,
+      };
+    }
+  }
+
+  if (cacheable) preflightCache = { result, at: Date.now() };
+  return result;
 }
 
 /** Extract the first JSON object from CLI text output (tolerates code fences and prose). */

@@ -1,6 +1,6 @@
 import { promises as fs } from "fs";
-import type { TranscriptSegment } from "./types";
-import { prisma } from "./prisma";
+import type { TranscriptSegment } from "../types";
+import { prisma } from "../prisma";
 
 // ---------------------------------------------------------------------------
 // Types

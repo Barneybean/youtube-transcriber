@@ -2,8 +2,8 @@ import { execFile, execSync } from "child_process";
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
-import type { TranscriptSegment } from "./types";
-import type { ProgressStage } from "./progress";
+import type { TranscriptSegment } from "../types";
+import type { ProgressStage } from "../progress";
 import {
   detectCollapseWindows,
   isDegenerateText,

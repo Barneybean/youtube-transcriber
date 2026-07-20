@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { access, constants } from "fs/promises";
+import { access, mkdir, constants } from "fs/promises";
 import path from "path";
 
 const execFileAsync = promisify(execFile);
@@ -70,6 +70,7 @@ async function checkWhisper(): Promise<Check> {
 async function checkTmpDir(): Promise<Check> {
   const tmpDir = path.join(process.cwd(), "tmp");
   try {
+    await mkdir(tmpDir, { recursive: true });
     await access(tmpDir, constants.W_OK);
     return { name: "tmp_writable", status: "pass", detail: tmpDir };
   } catch {
