@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-21
+
+### Fixed
+
+- **Single-video exports no longer pre-skip members-only videos** — the export pipeline skipped any members-only video before attempting it, so "MP4 + transcript" saved the MP4 but produced no transcript for members-only content even when the signed-in browser had access. A single-video export is an explicit request and now always attempts (audio download retries with browser cookies); channel batches keep the conservative pre-skip, and a true access failure still ends as a graceful skip.
+
 ## 2026-07-19
 
 ### Added

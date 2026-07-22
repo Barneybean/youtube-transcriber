@@ -640,7 +640,14 @@ async function runExport(job: ExportJob): Promise<void> {
         break;
       }
 
-      if (isMembersOnlyVideo(discovery.videos[item.index - 1]?.availability)) {
+      // Channel batches skip members-only videos up front; a single-video
+      // export is an explicit request, so attempt it — audio download retries
+      // with signed-in browser cookies, and a true access failure still lands
+      // in the members-only skip path below.
+      if (
+        job.total > 1 &&
+        isMembersOnlyVideo(discovery.videos[item.index - 1]?.availability)
+      ) {
         item.state = "skipped";
         item.detail = "Members-only video";
         job.skipped += 1;
