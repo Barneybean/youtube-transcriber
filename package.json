@@ -3,7 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=20.9 <25"
+    "node": "^20.19 || ^22.12 || >=24.0"
+  },
+  "trustedDependencies": [
+    "better-sqlite3"
+  ],
+  "overrides": {
+    "better-sqlite3": "^12.10.0"
   },
   "scripts": {
     "setup": "bash scripts/setup.sh",
@@ -17,7 +23,7 @@
     "restore": "tsx scripts/restore.ts",
     "backfill-transcriber-sources": "tsx scripts/backfill-transcriber-sources.ts",
     "fresh": "tsx scripts/fresh.ts",
-    "test:setup": "bash scripts/test-setup.sh"
+    "test:setup": "bash scripts/test-setup.sh && node --test tests/setup-verification.test.mjs"
   },
   "keywords": [
     "youtube",

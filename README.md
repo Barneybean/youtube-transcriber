@@ -39,12 +39,12 @@ npm run dev       # starts the app on http://localhost:19720
 
 Open [http://localhost:19720](http://localhost:19720), paste a YouTube video or channel URL, and start. Transcripts land in `transcript/<Channel Name>/` inside the repo; re-running the same source skips files that already exist.
 
-Requirements: Node.js 20.9–24 (`.nvmrc` says 24 — with Homebrew: `export PATH="$(brew --prefix node@24)/bin:$PATH"`), Python 3.8+, and a package manager (Homebrew / apt / dnf / pacman). **Mac/Linux only for auto-setup** — on Windows use WSL or the [manual installation](#manual-installation).
+Requirements: Node.js 20.19+, 22.12+, or 24+ (`.nvmrc` says 24 — with Homebrew: `export PATH="$(brew --prefix node@24)/bin:$PATH"`), Python 3.8+, and a package manager (Homebrew / apt / dnf / pacman). **Mac/Linux only for auto-setup** — on Windows use WSL or the [manual installation](#manual-installation).
 
 Verify any time:
 
 ```bash
-npm run test:setup                          # checks Node, Python, ffmpeg, yt-dlp, Whisper, DB, env
+npm run test:setup                          # checks Node, Python, media tools, Whisper, native SQLite, DB, env
 curl http://localhost:19720/api/health      # same checks as JSON, for a running instance
 ```
 

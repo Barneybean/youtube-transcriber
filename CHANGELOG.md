@@ -74,9 +74,14 @@
 
 ## 2026-07-15
 
+### Changed
+
+- **Accurate Node.js setup requirement** — Setup and documentation now require Node.js 20.19+, 22.12+, or 24+, matching the application dependencies. The SQLite driver is pinned to a release that also supports newer Node runtimes.
+
 ### Fixed
 
 - **YouTube audio-only HTTP 403 fallback** — Local Whisper downloads now retry with YouTube's progressive format 18 when separate audio-only streams are rejected with HTTP 403. This restores transcription for videos such as `UIEzt1gGCmk` whose metadata and progressive stream are available but whose DASH audio streams are forbidden.
+- **Setup no longer reports success with a broken database driver** — Setup verifies the `better-sqlite3` native binding after dependency installation, rebuilds it when lifecycle scripts were skipped or the Node ABI changed, and stops if verification fails. `npm run test:setup` also opens an in-memory database so a broken binding is caught before the app returns HTTP 500 errors.
 
 ## 2026-05-13
 
