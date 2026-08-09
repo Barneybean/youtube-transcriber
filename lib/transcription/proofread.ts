@@ -140,7 +140,7 @@ const OUTPUT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-function buildSystemPrompt(context: ProofreadContext): string {
+export function buildSystemPrompt(context: ProofreadContext): string {
   const about = [
     context.title ? `Video title: ${context.title}` : null,
     context.author ? `Channel: ${context.author}` : null,
@@ -151,7 +151,16 @@ function buildSystemPrompt(context: ProofreadContext): string {
     "You are proofreading an automatic speech-recognition (ASR) transcript. The lines are numbered and in order.",
     about ? `Use this context to resolve domain terminology:\n${about}` : null,
     "Fix ONLY transcription errors: wrong homophones, misrecognized names/tickers/terms, garbled words, and words split or joined incorrectly.",
-    "Keep the original language of every line — never translate. Do not rephrase, summarize, censor, merge, split, or reorder lines. Do not add or remove content the speaker did not say. Keep filler words.",
+    // Downstream these transcripts are read for what the speaker did and at what
+    // level. A mangled filler word costs nothing; a wrong ticker, a flipped
+    // action verb, or a corrupted figure is read as fact.
+    "Prioritise, in this order: (1) company and ticker names; (2) verbs describing a position change — buy, add, trim, sell, exit, rotate, hold — including any negation, which must never be dropped or introduced; (3) every number, and the unit or qualifier attached to it (price, percentage, share count, weight, date, 'around'/'above'/'below').",
+    "Numbers are the highest-stakes tokens here. Correct one only when the intended value is unambiguous from context; if you cannot tell, leave the line exactly as it is. An uncertain figure left alone is recoverable — a confidently wrong one is not.",
+    "Keep the original language of every line — never translate. Use one consistent script throughout: for Chinese, write simplified characters even when the input mixes in traditional ones.",
+    // A downstream reader matches one spelling of a figure. Every other spelling
+    // of the same number is invisible to it.
+    "Write every quantity in Arabic numerals, not spoken words — 一百三十 becomes 130, 八十二 becomes 82. Write every percentage with a percent sign — 百分之八 and 八个点 both become 8%. Leave numbers that are part of an idiom or a fixed phrase alone (十分, 万一, 三番五次 are not quantities).",
+    "Do not rephrase, summarize, censor, merge, split, or reorder lines. Do not add or remove content the speaker did not say. Keep filler words.",
     "Return only the lines that need a correction, each as its full corrected text with its original index. If nothing needs fixing, return an empty list.",
   ]
     .filter(Boolean)

@@ -28,6 +28,19 @@ const OPENAI_WHISPER_CLI = process.env.WHISPER_CLI?.trim() || "whisper";
 const WHISPER_BACKEND_OVERRIDE = process.env.WHISPER_BACKEND?.trim().toLowerCase();
 const WHISPER_DEVICE_OVERRIDE = process.env.WHISPER_DEVICE?.trim().toLowerCase();
 const MLX_WHISPER_MODEL_OVERRIDE = process.env.MLX_WHISPER_MODEL?.trim();
+/**
+ * Decoding language. Left unset, Whisper re-detects per window and drifts —
+ * an all-Mandarin recording emits stray English ("Thank you.") over silence.
+ */
+const WHISPER_LANGUAGE = process.env.WHISPER_LANGUAGE?.trim();
+/**
+ * Domain vocabulary conditioning. Whisper copies the prompt's orthography and
+ * terminology, so an unset prompt is why one captured corpus mixes scripts
+ * (traditional 倉 1,337 times against simplified 仓) and mishears domain words
+ * as homophones (古哥 for 谷歌). Write it in the script and vocabulary the
+ * output should use, including the proper nouns that matter downstream.
+ */
+const WHISPER_INITIAL_PROMPT = process.env.WHISPER_INITIAL_PROMPT?.trim();
 const HF_TOKEN = process.env.HF_TOKEN?.trim();
 
 type WhisperBackend = "mlx" | "openai";
@@ -176,6 +189,46 @@ async function ensureExpectedOutput(audioPath: string, outputDir: string, label:
 }
 
 /**
+ * Build the OpenAI Whisper CLI argument list.
+ *
+ * Exported so the decoding contract is testable without spawning the CLI:
+ * whether the run is pinned to a language and conditioned on a domain
+ * vocabulary determines whether the transcript is usable at all downstream.
+ */
+export function buildOpenAiWhisperArgs(
+  audioPath: string,
+  outputDir: string,
+  model: string,
+  device: string,
+  opts: { noCondition?: boolean; language?: string; initialPrompt?: string } = {}
+): string[] {
+  const args = [
+    audioPath,
+    "--model", model,
+    "--output_format", "json",
+    "--output_dir", outputDir,
+  ];
+  if (opts.noCondition) {
+    args.push("--condition_on_previous_text", "False");
+  }
+  if (opts.language) {
+    args.push("--language", opts.language);
+  }
+  if (opts.initialPrompt) {
+    args.push("--initial_prompt", opts.initialPrompt);
+  }
+  if (device !== "cpu") {
+    args.push("--device", device);
+  }
+  // MPS can produce unstable FP16 output on some systems/audio (NaNs -> empty output).
+  // Force FP32 on MPS for consistency.
+  if (device === "mps") {
+    args.push("--fp16", "False");
+  }
+  return args;
+}
+
+/**
  * Run OpenAI Whisper CLI on an audio file with a specific device.
  * Throws if the expected JSON output is not produced (e.g., MPS silently skips on NaN).
  */
@@ -187,23 +240,11 @@ async function runOpenAiWhisperWithDevice(
   timeoutMs: number,
   opts: { noCondition?: boolean } = {}
 ): Promise<void> {
-  const args = [
-    audioPath,
-    "--model", model,
-    "--output_format", "json",
-    "--output_dir", outputDir,
-  ];
-  if (opts.noCondition) {
-    args.push("--condition_on_previous_text", "False");
-  }
-  if (device !== "cpu") {
-    args.push("--device", device);
-  }
-  // MPS can produce unstable FP16 output on some systems/audio (NaNs -> empty output).
-  // Force FP32 on MPS for consistency.
-  if (device === "mps") {
-    args.push("--fp16", "False");
-  }
+  const args = buildOpenAiWhisperArgs(audioPath, outputDir, model, device, {
+    noCondition: opts.noCondition,
+    language: WHISPER_LANGUAGE,
+    initialPrompt: WHISPER_INITIAL_PROMPT,
+  });
   await execFileAsync(OPENAI_WHISPER_CLI, args, { timeout: timeoutMs });
   await ensureExpectedOutput(audioPath, outputDir, `OpenAI Whisper (${device})`);
 }
@@ -239,14 +280,16 @@ async function runMlxWhisper(
       const script =
         "import json, sys;" +
         "from mlx_whisper import transcribe;" +
-        "audio, model_name, out_path, no_cond = sys.argv[1:5];" +
-        "res = transcribe(audio, path_or_hf_repo=model_name, condition_on_previous_text=(no_cond != '1'));" +
+        "audio, model_name, out_path, no_cond, lang, prompt = sys.argv[1:7];" +
+        "res = transcribe(audio, path_or_hf_repo=model_name, condition_on_previous_text=(no_cond != '1')," +
+        " language=(lang or None), initial_prompt=(prompt or None));" +
         "f = open(out_path, 'w', encoding='utf-8');" +
         "json.dump({'segments': res.get('segments', [])}, f);" +
         "f.close()";
       await execFileAsync(
         PYTHON_BIN,
-        ["-c", script, audioPath, candidate, jsonPath, opts.noCondition ? "1" : "0"],
+        ["-c", script, audioPath, candidate, jsonPath, opts.noCondition ? "1" : "0",
+         WHISPER_LANGUAGE ?? "", WHISPER_INITIAL_PROMPT ?? ""],
         { timeout: timeoutMs }
       );
       await ensureExpectedOutput(audioPath, outputDir, `MLX Whisper (${candidate})`);
