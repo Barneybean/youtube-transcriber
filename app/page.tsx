@@ -1,9 +1,14 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 type ExportPhase =
-  "discovering" | "running" | "completed" | "failed" | "cancelled";
+  | "discovering"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
 type ExportItemState = "queued" | "processing" | "saved" | "skipped" | "failed";
 
 interface ExportItem {
@@ -308,26 +313,37 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <div
-            className="flex items-center gap-2 text-xs text-[hsl(var(--muted-2))]"
-            aria-live="polite"
+          <nav
+            className="flex items-center gap-4"
+            aria-label="Primary navigation"
           >
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                health === "ready"
-                  ? "bg-[hsl(var(--accent))]"
-                  : health === "unavailable"
-                    ? "bg-red-300"
-                    : "animate-pulse bg-[hsl(var(--muted-2))]"
-              }`}
-              aria-hidden="true"
-            />
-            {health === "ready"
-              ? "Ready"
-              : health === "unavailable"
-                ? "Unavailable"
-                : "Checking"}
-          </div>
+            <Link
+              href="/about"
+              className={`text-xs text-[hsl(var(--muted-2))] transition-[box-shadow,background,color] duration-150 hover:text-[hsl(var(--muted))] ${buttonFocus}`}
+            >
+              About
+            </Link>
+            <div
+              className="flex items-center gap-2 text-xs text-[hsl(var(--muted-2))]"
+              aria-live="polite"
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  health === "ready"
+                    ? "bg-[hsl(var(--accent))]"
+                    : health === "unavailable"
+                      ? "bg-red-300"
+                      : "animate-pulse bg-[hsl(var(--muted-2))]"
+                }`}
+                aria-hidden="true"
+              />
+              {health === "ready"
+                ? "Ready"
+                : health === "unavailable"
+                  ? "Unavailable"
+                  : "Checking"}
+            </div>
+          </nav>
         </header>
 
         <section aria-labelledby="page-title" className="mb-8">
@@ -382,9 +398,7 @@ export default function Home() {
             <button
               type="button"
               onClick={downloadVideo}
-              disabled={
-                !url.trim() || downloading || health !== "ready"
-              }
+              disabled={!url.trim() || downloading || health !== "ready"}
               aria-busy={downloading}
               title="Download the full video as MP4 and extract its transcript"
               className={`min-h-12 shrink-0 rounded-md bg-[hsl(var(--panel-2))] px-4 py-3 text-sm font-medium text-[hsl(var(--muted))] shadow-[var(--edge)] transition-[box-shadow,background,color] duration-150 hover:bg-white/[0.04] hover:text-[hsl(var(--text))] active:bg-white/[0.06] disabled:cursor-not-allowed disabled:text-[hsl(var(--muted-2))] disabled:hover:bg-[hsl(var(--panel-2))] ${buttonFocus}`}

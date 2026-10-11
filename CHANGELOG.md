@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-09
+
+### Added
+
+- **Public discovery metadata** — public deployments can set `NEXT_PUBLIC_SITE_URL` to enable indexing and emit canonical metadata, a sitemap, `WebSite` and `SoftwareApplication` structured data, and privacy-scoped crawler rules that allow the public home/about pages while excluding API, settings, library, and transcript routes. Without an explicit public HTTPS origin, the app fails closed with `noindex` and a site-wide crawl disallow.
+- **Searchable product answers** — the public About page now gives direct, accurate answers about channel transcription, caption and Whisper fallbacks, privacy, pricing, and MP4 downloads, with crawlable navigation from the home page.
+
+### Changed
+
+- **About page accuracy** — removed stale extension, MCP, OpenClaw, and hosted-workflow claims that no longer exist in the local file-first fork; refreshed titles and descriptions to consistently identify Transcript Desk as a local YouTube transcript generator.
+
 ## 2026-07-21
 
 ### Fixed

@@ -8,15 +8,15 @@ A free, open-source **YouTube transcript generator**: paste a video or channel U
 
 ![Transcript Desk web UI — paste a YouTube video or channel URL and export timestamped Markdown transcripts locally](docs/media/transcript-desk-ui.png)
 
-| | |
-|---|---|
-| **What** | Local web app (Next.js 15) + REST API for YouTube transcription |
-| **Runs at** | `http://localhost:19720` (`npm run dev`) |
-| **Output** | `transcript/<Channel Name>/<date> - <title>.md` · videos in `<Channel Name>/video/*.mp4` (root configurable via `YTT_EXPORT_ROOT`) |
-| **Storage** | Local SQLite (`dev.db`) — nothing leaves your machine by default |
-| **Engines** | YouTube captions → optional cloud Whisper (Groq/OpenAI/OpenRouter) → local Whisper (MLX on Apple Silicon) |
-| **Extras** | Full-video MP4 download · automatic repetition-collapse repair · AI proofreading (API key or local Claude Code CLI) |
-| **License** | AGPL-3.0 — fork of [lifesized/youtube-transcriber](https://github.com/lifesized/youtube-transcriber) |
+|             |                                                                                                                                    |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **What**    | Local web app (Next.js 16) + REST API for YouTube transcription                                                                    |
+| **Runs at** | `http://localhost:19720` (`npm run dev`)                                                                                           |
+| **Output**  | `transcript/<Channel Name>/<date> - <title>.md` · videos in `<Channel Name>/video/*.mp4` (root configurable via `YTT_EXPORT_ROOT`) |
+| **Storage** | Local SQLite (`dev.db`) — nothing leaves your machine by default                                                                   |
+| **Engines** | YouTube captions → optional cloud Whisper (Groq/OpenAI/OpenRouter) → local Whisper (MLX on Apple Silicon)                          |
+| **Extras**  | Full-video MP4 download · automatic repetition-collapse repair · AI proofreading (API key or local Claude Code CLI)                |
+| **License** | AGPL-3.0 — fork of [lifesized/youtube-transcriber](https://github.com/lifesized/youtube-transcriber)                               |
 
 ## About this fork
 
@@ -61,8 +61,9 @@ curl http://localhost:19720/api/health      # same checks as JSON, for a running
       video/
         2026-07-15 - Title [videoId].mp4  ← downloaded videos
   ```
+
 - **Repair repetition collapse automatically** — Whisper can degenerate into token loops on speech under music beds, losing that content; collapsed windows are detected and re-transcribed with a stronger model.
-- **Proofread with an AI agent** — ASR homophone/name errors fixed by Claude after transcription, via an Anthropic API key **or** your local Claude Code CLI (no key). You're told which agent will run *before* transcription starts; a broken setup falls back to the other available agent.
+- **Proofread with an AI agent** — ASR homophone/name errors fixed by Claude after transcription, via an Anthropic API key **or** your local Claude Code CLI (no key). You're told which agent will run _before_ transcription starts; a broken setup falls back to the other available agent.
 - **Access members-only videos** — uses your signed-in Chrome profile for channels you're a member of.
 - **Any language** — caption language priority list with fallback (`lang` parameter / `YTT_CAPTION_LANGS`).
 - **Audit trail** — every export records which engine produced it (`Transcriber:` header in each file).
@@ -77,17 +78,17 @@ The primary surface at `localhost:19720`: paste a URL, pick a destination, watch
 
 Everything the app does is scriptable. Full reference: [docs/API.md](./docs/API.md) · [OpenAPI spec](./docs/openapi.yaml).
 
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/api/transcripts` | POST | Transcribe one video: `{"url": "...", "lang": "ja,en"?}` |
-| `/api/transcripts` | GET | List stored transcripts |
-| `/api/transcripts/<id>` | GET / DELETE | Fetch / remove one transcript |
-| `/api/transcripts/<id>/download` | GET | Download as timestamped Markdown |
-| `/api/transcripts/progress` | GET | Live progress (Server-Sent Events) |
-| `/api/export` | POST | Start a channel batch: `{"url": "...", "year": 2026?}` |
-| `/api/export` | GET | Batch status: phase, counts, per-video states, `outputRoot` |
-| `/api/download` | POST | Save the full MP4 + transcript: `{"url": "...", "transcript": false?}` |
-| `/api/health` | GET | Per-dependency pass/fail (Node, Python, ffmpeg, yt-dlp, Whisper, DB) |
+| Endpoint                         | Method       | Purpose                                                                |
+| -------------------------------- | ------------ | ---------------------------------------------------------------------- |
+| `/api/transcripts`               | POST         | Transcribe one video: `{"url": "...", "lang": "ja,en"?}`               |
+| `/api/transcripts`               | GET          | List stored transcripts                                                |
+| `/api/transcripts/<id>`          | GET / DELETE | Fetch / remove one transcript                                          |
+| `/api/transcripts/<id>/download` | GET          | Download as timestamped Markdown                                       |
+| `/api/transcripts/progress`      | GET          | Live progress (Server-Sent Events)                                     |
+| `/api/export`                    | POST         | Start a channel batch: `{"url": "...", "year": 2026?}`                 |
+| `/api/export`                    | GET          | Batch status: phase, counts, per-video states, `outputRoot`            |
+| `/api/download`                  | POST         | Save the full MP4 + transcript: `{"url": "...", "transcript": false?}` |
+| `/api/health`                    | GET          | Per-dependency pass/fail (Node, Python, ffmpeg, yt-dlp, Whisper, DB)   |
 
 ```bash
 # One video → stored in the library, response includes the transcript
@@ -121,19 +122,36 @@ curl -X POST http://localhost:19720/api/download \
 
 Everything lives in `.env` ([.env.example](./.env.example) has the full annotated list). The important ones:
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `YTT_EXPORT_ROOT` | `./transcript` | Where channel exports and MP4 downloads are written |
-| `VIDEO_DOWNLOAD_FORMAT` | `bv*+ba/b` | yt-dlp format selector for MP4 downloads (default: best quality) |
-| `YTT_CAPTION_LANGS` | `en` | Caption language priority, e.g. `zh-Hans,zh-Hant,en` |
-| `WHISPER_MODEL` | `large-v3-turbo` | Local Whisper model (`base` = faster, lower accuracy) |
-| `WHISPER_REPAIR_ENABLED` | `true` | Auto re-transcribe collapsed windows |
-| `WHISPER_REPAIR_MODEL` | `large-v3` | Stronger model used for repairs |
-| `ANTHROPIC_API_KEY` | — | Enables AI proofreading via the Anthropic API |
-| `PROOFREAD_BACKEND` | `api` | `claude-cli` = proofread via your local Claude Code CLI, no key needed |
-| `PROOFREAD_MODEL` | `claude-opus-4-8` | Proofreading model |
-| `WHISPER_CLOUD_API_KEY` | — | Single-key cloud Whisper (Groq); more providers in Settings UI |
-| `PORT` | `19720` | Service port |
+| Variable                 | Default           | Purpose                                                                |
+| ------------------------ | ----------------- | ---------------------------------------------------------------------- |
+| `YTT_EXPORT_ROOT`        | `./transcript`    | Where channel exports and MP4 downloads are written                    |
+| `VIDEO_DOWNLOAD_FORMAT`  | `bv*+ba/b`        | yt-dlp format selector for MP4 downloads (default: best quality)       |
+| `YTT_CAPTION_LANGS`      | `en`              | Caption language priority, e.g. `zh-Hans,zh-Hant,en`                   |
+| `WHISPER_MODEL`          | `large-v3-turbo`  | Local Whisper model (`base` = faster, lower accuracy)                  |
+| `WHISPER_REPAIR_ENABLED` | `true`            | Auto re-transcribe collapsed windows                                   |
+| `WHISPER_REPAIR_MODEL`   | `large-v3`        | Stronger model used for repairs                                        |
+| `ANTHROPIC_API_KEY`      | —                 | Enables AI proofreading via the Anthropic API                          |
+| `PROOFREAD_BACKEND`      | `api`             | `claude-cli` = proofread via your local Claude Code CLI, no key needed |
+| `PROOFREAD_MODEL`        | `claude-opus-4-8` | Proofreading model                                                     |
+| `WHISPER_CLOUD_API_KEY`  | —                 | Single-key cloud Whisper (Groq); more providers in Settings UI         |
+| `PORT`                   | `19720`           | Service port                                                           |
+
+### Public deployment and search visibility
+
+Transcript Desk is local-first: `localhost:19720` cannot appear in public search or AI answers.
+The GitHub README is the primary public description. If you deliberately deploy the web app on a
+public HTTPS origin, set its canonical URL:
+
+```env
+NEXT_PUBLIC_SITE_URL="https://transcripts.example.com"
+```
+
+That enables indexing, canonical metadata, `sitemap.xml`, `SoftwareApplication` structured data,
+and a `robots.txt` that permits the public home/about pages and search crawlers (including OpenAI's
+`OAI-SearchBot`) while excluding the API, settings, library, and transcript routes. Without this
+variable, the app emits `noindex` and disallows crawling. Robots rules are crawler preferences,
+**not access control**; do not publicly deploy a library containing private transcripts without
+real authentication and authorization.
 
 ### AI proofreading
 
